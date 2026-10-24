@@ -1,0 +1,11 @@
+node_modules/
+dist/
+dist-tmp/
+playwright-report/
+test-results/
+tests/.artifacts/
+coverage/
+.vite/
+*.local
+.DS_Store
+dev-dist/

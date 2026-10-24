@@ -1,0 +1,338 @@
+/* App shell, dashboard, chart grid, responsive layout (plan §5.3, §5.8). */
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* === Header === */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent);
+}
+
+.brand-word {
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  font-size: 15px;
+}
+
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+}
+
+.source-badge-demo {
+  border-color: var(--warning);
+  color: var(--warning);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot-ok {
+  background: var(--ok);
+  box-shadow: 0 0 6px var(--ok);
+}
+.dot-warn {
+  background: var(--warning);
+}
+.dot-danger {
+  background: var(--danger);
+  box-shadow: 0 0 6px var(--danger);
+}
+.dot-idle {
+  background: var(--text-dim);
+}
+
+.header-device {
+  color: var(--text-muted);
+  font-size: 12px;
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-chip {
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+}
+
+.header-chip-danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.header-spacer {
+  flex: 1;
+}
+
+/* === Main + dashboard === */
+.app-main {
+  flex: 1;
+  overflow: auto;
+}
+
+.dashboard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 16px;
+  padding: 16px;
+  align-items: start;
+}
+
+.dashboard-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* === Chart grid: 3 rows x 2 cols (time left, FFT right) === */
+.chart-grid-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chart-grid-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 28px;
+}
+
+.chart-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: repeat(3, minmax(220px, 1fr));
+  grid-auto-flow: column;
+  gap: 12px;
+  height: calc(100vh - 320px);
+  min-height: 660px;
+}
+
+.chart-grid-compact {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: none;
+  grid-auto-flow: row;
+  height: auto;
+  min-height: 0;
+}
+
+/* === Landing === */
+.landing {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 32px 24px 48px;
+  max-width: 1500px;
+  margin: 0 auto;
+}
+
+.landing-hero {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding-top: 24px;
+}
+
+.landing-title {
+  font-size: 44px;
+  letter-spacing: 0.3em;
+  font-weight: 800;
+  color: var(--accent);
+  text-shadow: 0 0 24px rgba(34, 211, 238, 0.35);
+}
+
+.landing-subtitle {
+  color: var(--text-muted);
+  font-size: 17px;
+}
+
+.landing-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.landing-note {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.landing-demo {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.demo-badge-row {
+  display: flex;
+  justify-content: center;
+}
+
+.landing-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+/* === Status strip === */
+.status-strip {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 6px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.status-strip b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.status-spacer {
+  flex: 1;
+}
+.status-dim {
+  color: var(--text-dim);
+}
+.status-danger {
+  color: var(--danger);
+}
+.status-warning {
+  color: var(--warning);
+}
+
+/* === Responsive (plan §5.8) === */
+@media (max-width: 1439px) {
+  .dashboard {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .settings-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    height: 100%;
+    z-index: 40;
+    transform: translateX(100%);
+    transition: transform var(--motion);
+    box-shadow: var(--shadow);
+    border-radius: 0;
+    width: min(380px, 92vw);
+  }
+  .settings-drawer.settings-drawer-open {
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 1099px) {
+  .chart-grid:not(.chart-grid-compact) {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    min-height: 0;
+  }
+  /* Stack Time above FFT per axis. DOM order: t0 t1 t2 f0 f1 f2. */
+  .chart-grid:not(.chart-grid-compact) .chart-time:nth-child(1) {
+    order: 1;
+  }
+  .chart-grid:not(.chart-grid-compact) .chart-fft:nth-child(4) {
+    order: 2;
+  }
+  .chart-grid:not(.chart-grid-compact) .chart-time:nth-child(2) {
+    order: 3;
+  }
+  .chart-grid:not(.chart-grid-compact) .chart-fft:nth-child(5) {
+    order: 4;
+  }
+  .chart-grid:not(.chart-grid-compact) .chart-time:nth-child(3) {
+    order: 5;
+  }
+  .chart-grid:not(.chart-grid-compact) .chart-fft:nth-child(6) {
+    order: 6;
+  }
+  .chart-grid:not(.chart-grid-compact) .chart-panel {
+    height: 300px;
+  }
+  .header-device {
+    display: none;
+  }
+}
+
+@media (max-width: 759px) {
+  .app-header {
+    gap: 8px;
+    padding: 8px 10px;
+  }
+  .header-chip {
+    display: none;
+  }
+  .brand-word {
+    display: none;
+  }
+  .dashboard {
+    padding: 10px;
+    gap: 10px;
+  }
+  .landing {
+    padding: 16px 12px 40px;
+  }
+  .landing-title {
+    font-size: 32px;
+  }
+  .chart-grid-compact .chart-panel {
+    height: 280px;
+  }
+  .peak-cards {
+    grid-template-columns: 1fr;
+  }
+  .status-strip {
+    gap: 10px;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+}

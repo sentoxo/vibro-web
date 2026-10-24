@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit + DOM tests
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Initial bundle budget (main entry ≤ 150 kB gzip)
+        run: |
+          main=$(ls -S dist/assets/index-*.js | head -1)
+          size=$(gzip -c "$main" | wc -c)
+          echo "$main gzip: $size bytes"
+          test "$size" -le 153600
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: End-to-end tests
+        run: npm run test:e2e
+      - name: Validate web-exported DVB1 with the desktop Python parser
+        run: |
+          python3 -m pip install --quiet numpy pyserial
+          python3 scripts/validate_export.py tests/.artifacts/exported.bin
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: tests/.artifacts/report
+          retention-days: 7
