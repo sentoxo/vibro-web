@@ -2,7 +2,7 @@
 // permission/busy error help (plan §5.2, §6.6).
 
 import { useEffect, useState } from "preact/compat";
-import { CH340_FILTERS } from "../core/constants";
+import { SENSOR_FILTERS } from "../core/constants";
 import { store } from "../state/store";
 import { getGrantedPorts, requestNewPort, serialSupported, type PortSummary } from "../sources/serial";
 
@@ -35,12 +35,12 @@ export function ConnectDialog({ onClose }: { onClose: () => void }) {
     setError(null);
     setBusy(true);
     try {
-      const port = await requestNewPort(useFilters ? CH340_FILTERS : undefined);
+      const port = await requestNewPort(useFilters ? SENSOR_FILTERS : undefined);
       await connect(port);
     } catch (err) {
       setBusy(false);
       if (err instanceof DOMException && err.name === "NotFoundError") {
-        setError("No sensor found. Plug in the CH340 device, then try again.");
+        setError("No sensor found. Plug in the sensor (STM32 VCP or CH340), then try again.");
       } else if (err instanceof DOMException && err.name === "NotAllowedError") {
         setError("Port selection was cancelled or denied. Grant access to connect.");
       } else {
@@ -93,13 +93,13 @@ export function ConnectDialog({ onClose }: { onClose: () => void }) {
               </div>
             )}
             <p class="modal-note">
-              Sensor: CH340 at 921600 baud. Close the Python app and make sure your user has serial permissions
-              (uucp/dialout group).
+              Sensor over USB CDC (STM32 VCP or CH340) at 921600 baud line coding. Close the Python app and make sure
+              your user has serial permissions (uucp/dialout group).
             </p>
             {error && <div class="modal-error">{error}</div>}
             <div class="modal-actions">
               <button class="btn btn-accent" disabled={busy} onClick={() => void grant(true)}>
-                Grant CH340 port
+                Select sensor port
               </button>
               <button class="btn" disabled={busy} onClick={() => void grant(false)}>
                 Show all serial devices

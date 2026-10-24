@@ -35,7 +35,7 @@ function findSetMotor(bytes: number[], throttle: number): boolean {
 async function connectSensor(page: Page) {
   await page.goto("/");
   await page.getByRole("button", { name: "Connect sensor" }).click();
-  await page.getByRole("button", { name: "Grant CH340 port" }).click();
+  await page.getByRole("button", { name: "Select sensor port" }).click();
 }
 
 test.describe("mock serial sensor", () => {
@@ -73,8 +73,54 @@ test.describe("mock serial sensor", () => {
       .poll(() => page.evaluate(() => (window as any).__store.diagnostics.value.malformedLines), { timeout: 5_000 })
       .toBeGreaterThanOrEqual(1);
 
-    // Status strip shows the wire readout for serial sources.
+    // Status strip shows the measured payload rate for serial sources.
     await expect(page.getByLabel("Diagnostics")).toContainText("wire");
+    await expect(page.getByLabel("Diagnostics")).toContainText("KB/s");
+  });
+
+  test("manual disconnect and reconnect does not count the outage as loss", async ({ page }) => {
+    await page.addInitScript(installFakeSerial, { simulateLoss: false });
+    await connectSensor(page);
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__store.diagnostics.value.packetRate), { timeout: 10_000 })
+      .toBeGreaterThan(10);
+
+    // Let the sensor advance its sequence while streaming.
+    await page.waitForTimeout(1000);
+    await page.getByRole("button", { name: "Disconnect", exact: true }).click();
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__store.connection.value), { timeout: 5_000 })
+      .toBe("idle");
+
+    // The device keeps producing frames while detached; reconnecting must use
+    // a fresh sequence baseline and a zero loss counter.
+    await page.waitForTimeout(1200);
+    await page.getByRole("button", { name: "Connect", exact: true }).click();
+    await page.getByRole("button", { name: /STM32 VCP/ }).click();
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__store.connection.value), { timeout: 15_000 })
+      .toBe("streaming");
+    await page.waitForTimeout(1500);
+    expect(await page.evaluate(() => (window as any).__store.diagnostics.value.lostPackets)).toBe(0);
+    await expect(page.getByRole("dialog", { name: "Lost packets detected" })).toHaveCount(0);
+    expect(await page.evaluate(() => window.__fakeSerial?.sensor?.openCount ?? 0)).toBeGreaterThanOrEqual(2);
+  });
+
+  test("auto-reconnects after a device loss without a loss spike", async ({ page }) => {
+    await page.addInitScript(installFakeSerial, { simulateLoss: false });
+    await connectSensor(page);
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__store.diagnostics.value.packetRate), { timeout: 10_000 })
+      .toBeGreaterThan(10);
+
+    await page.evaluate(() => window.__fakeSerial?.simulateSensorLoss());
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__store.connection.value), { timeout: 20_000 })
+      .toBe("streaming");
+    await page.waitForTimeout(1500);
+    expect(await page.evaluate(() => (window as any).__store.diagnostics.value.lostPackets)).toBe(0);
+    await expect(page.getByRole("dialog", { name: "Lost packets detected" })).toHaveCount(0);
+    expect(await page.evaluate(() => window.__fakeSerial?.sensor?.openCount ?? 0)).toBeGreaterThanOrEqual(2);
   });
 
   test("FC telemetry, motor start, power change and stop ramp", async ({ page }) => {

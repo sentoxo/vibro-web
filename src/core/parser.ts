@@ -8,7 +8,7 @@ export interface ParsedLine {
   x: number; // raw counts
   y: number;
   z: number;
-  bytes: number; // wire bytes of the complete line (for wire utilization)
+  bytes: number; // wire bytes of the complete line (for the data-rate meter)
 }
 
 const NEWLINE = 0x0a; // \n

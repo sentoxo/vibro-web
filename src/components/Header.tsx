@@ -26,12 +26,16 @@ export function Header({
   const connection = store.connection.value;
   const staticMode = store.staticMode.value;
   const diag = store.diagnostics.value;
+  const paused = store.paused.value;
   const demo = kind === "demo";
   const badge = demo ? "DEMO" : kind === "file" ? "FILE" : "LIVE";
   const connected =
     (kind === "serial" && (connection === "streaming" || connection === "reconnecting")) ||
     (kind === "demo" && !staticMode) ||
     (kind === "file" && staticMode);
+  // Freeze only makes sense for a live stream on the dashboard (file bursts
+  // and the static demo bursts are already frozen).
+  const canFreeze = store.screen.value === "dashboard" && connected && !staticMode && kind !== "file";
 
   return (
     <header class="app-header">
@@ -49,13 +53,21 @@ export function Header({
         <span class="header-chip header-chip-danger tabular">Loss {formatInt(diag.lostPackets)}</span>
       )}
       <span class="header-chip tabular">FPS {formatInt(diag.fps)}</span>
+      {canFreeze && (
+        <button
+          class={`btn btn-small ${paused ? "btn-accent" : ""}`}
+          aria-pressed={paused}
+          title={paused ? "Resume live updates" : "Freeze the charts (data keeps buffering)"}
+          onClick={() => {
+            store.paused.value = !store.paused.value;
+          }}
+        >
+          {paused ? "Resume" : "Freeze"}
+        </button>
+      )}
       <span class="header-spacer" />
       {kind === "serial" && connected ? (
-        <button
-          class="btn"
-          onClick={() => void store.disconnectSerial()}
-          disabled={store.connection.value === "reconnecting"}
-        >
+        <button class="btn" onClick={() => void store.disconnectSerial()}>
           Disconnect
         </button>
       ) : (

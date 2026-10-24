@@ -61,7 +61,13 @@ scripts/         gen_golden.py (fixture regeneration), validate_export.py (byte-
   the web→Python direction.
 - **Serial**: `call all\n` on open → 3 s → `start stream\n`; packet rate counts all valid lines;
   loss = seq gaps on sid==0 lines (`gap = seq - last_seq`, no mod-wrap normalization);
-  first loss in a session opens a one-time modal.
+  first loss in a session opens a one-time modal. A manual connect clears the counters and uses
+  a fresh sequence baseline, so disconnect → connect without unplugging reports zero loss.
+  Automatic reconnect keeps session totals but re-baselines seq (the outage gap is not loss) and
+  re-acquires the port from `navigator.serial.getPorts()` (Chrome issues a new handle after replug).
+- **Link rate**: diagnostics show measured payload `rate × avgLineBytes` in KB/s. Do not compute a
+  percentage of the nominal baud rate: the sensor is an STM32 USB CDC device (USB full speed), so
+  921600 is line coding, not the transport ceiling.
 - **ESC**: throttle `1000 + power*10` with Python `int(round())` banker's rounding; stop ramp
   5 % per 50 ms step (allowed from idle when FC connected); commands only on start/change/stop.
 - **MSP v1**: `$M<`/`$M>` size cmd payload xor (xor over size+cmd+payload); telemetry record
@@ -78,6 +84,10 @@ scripts/         gen_golden.py (fixture regeneration), validate_export.py (byte-
 - DVB1 header is 32 bytes without sensitivity/filter fields (PLAN described an older 40-byte layout);
   the "resync maxSamples" rule is gone — files are multi-burst containers.
 - Desktop CPU stat → web render-ms/FPS readout; desktop updater → PWA update prompt.
+- PLAN's wire-utilization percentage → measured KB/s (STM32 USB CDC, no baud budget to divide by);
+  the >80 % warning and the 921600-baud IMU-rate warning are gone.
+- Time charts use `0..durationSeconds` everywhere, including the PNG export (the old
+  `-duration..0` range clipped every live curve off-screen). `Freeze/Resume` lives in the header.
 - Landing auto-demo stream is a web-only extra; app "Demo" mode = the 4 static bursts.
 
 ## Commands
@@ -121,7 +131,11 @@ E2E downloads `tests/.artifacts/exported.bin` during the file-mode spec; the CI 
 - **Arch Linux hosts**: `npx playwright install chromium` only (no `--with-deps`; sudo fails);
   system libraries are already present on the dev machine.
 - `ESC_HEARTBEAT_HZ = 0` is dead/documentation; `fftMaxChoicesFor(_imuHz)` returns all choices for
-  API compatibility; `store.imuRateMayNotFit` is a web-only wire warning (the desktop has no clamp).
+  API compatibility. The measurement readout is `formatDataRate` (KB/s), never a baud percentage.
+- **Fake serial reconnect**: the mock port recreates its streams on `open()` and is nullable when
+  closed (real `SerialPort.readable`/`writable` are null after close). `simulateSensorLoss()`
+  errors the pending read and dispatches a `disconnect` event; the pump keeps advancing `seq`
+  while detached, which is exactly the no-loss baseline test for auto-reconnect.
 
 ## Definition of done (any feature change)
 

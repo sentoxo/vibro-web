@@ -79,7 +79,6 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
             ))}
           </select>
         </label>
-        {store.imuRateMayNotFit && <div class="setting-warning">This text protocol may not fit at 921600 baud.</div>}
         <label class="field-row">
           <span>FFT max</span>
           <select

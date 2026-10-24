@@ -3,7 +3,7 @@
 
 import { axisColorFor, chartTheme, fmtHz, fmtSeconds } from "./theme";
 import { store } from "../state/store";
-import { formatFixed } from "../core/units";
+import { formatDataRate, formatFixed } from "../core/units";
 
 const WIDTH = 1920;
 const HEIGHT = 1080;
@@ -57,9 +57,12 @@ function drawPanel(
   ctx.lineWidth = 1;
   ctx.stroke();
 
+  // Every panel starts from a known text state: previous panels end with
+  // right/center-aligned tick labels and a rotated axis label.
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
   ctx.fillStyle = theme.text;
   ctx.font = "600 18px system-ui, sans-serif";
-  ctx.textBaseline = "alphabetic";
   ctx.fillText(panel.title, x + 16, y + 28);
 
   const pad = { top: 44, right: 20, bottom: 40, left: 64 };
@@ -189,52 +192,54 @@ export async function composeDashboardPng(): Promise<Blob> {
   const gridTop = 210;
   const panelW = (WIDTH - MARGIN * 2 - GAP) / 2;
   const panelH = (HEIGHT - gridTop - MARGIN - GAP * 2) / 3;
+  const empty = new Float64Array(0);
   for (let axis = 0; axis < 3; axis++) {
     const color = axisColorFor(axis as 0 | 1 | 2, theme);
     const y = gridTop + axis * (panelH + GAP);
 
-    // Time panel.
-    if (timeFrame && timeFrame.n > 0) {
-      const ys = timeFrame[axis === 0 ? "x" : axis === 1 ? "y" : "z"] as Float64Array;
-      let maxAbs = 1;
-      for (let i = 0; i < timeFrame.n; i++) maxAbs = Math.max(maxAbs, Math.abs(ys[i]));
-      const limit = maxAbs * 1.1;
-      drawPanel(ctx, theme, MARGIN, y, panelW, panelH, {
-        title: `Time — ${axisNames[axis]} axis — ${timeFrame.axisRms[axis].toFixed(2)} m/s² RMS`,
-        xs: timeFrame.t,
-        ys,
-        n: timeFrame.n,
-        xMin: timeFrame.mode === "file" ? 0 : -timeFrame.durationSeconds,
-        xMax: timeFrame.mode === "file" ? timeFrame.durationSeconds : 0,
-        yMin: -limit,
-        yMax: limit,
-        xLabel: "s",
-        yLabel: "m/s²",
-        color,
-      });
-    }
+    // Time panel. Always drawn (even before data arrives) so a snapshot never
+    // leaves a blank hole in the dashboard.
+    const ys = timeFrame ? (timeFrame[axis === 0 ? "x" : axis === 1 ? "y" : "z"] as Float64Array) : empty;
+    const sampleCount = timeFrame?.n ?? 0;
+    let maxAbs = 1;
+    for (let i = 0; i < sampleCount; i++) maxAbs = Math.max(maxAbs, Math.abs(ys[i]));
+    const limit = maxAbs * 1.1;
+    const timeMax = timeFrame?.mode === "file" ? timeFrame.durationSeconds : settings.windowSeconds;
+    drawPanel(ctx, theme, MARGIN, y, panelW, panelH, {
+      title: `Time — ${axisNames[axis]} axis — ${(timeFrame?.axisRms[axis] ?? 0).toFixed(2)} m/s² RMS`,
+      xs: timeFrame?.t ?? empty,
+      ys,
+      n: sampleCount,
+      // Charts use 0..duration in both modes (desktop rule); the data array is
+      // oldest-first and would be clipped away by a -duration..0 range.
+      xMin: 0,
+      xMax: timeMax > 0 ? timeMax : settings.windowSeconds,
+      yMin: -limit,
+      yMax: limit,
+      xLabel: "s",
+      yLabel: "m/s²",
+      color,
+    });
 
     // FFT panel.
     const { freqs, amps } = store.getSpectrum(axis);
-    if (freqs.length > 1) {
-      const maxHz = Math.min(settings.fftMaxHz, settings.imuHz / 2);
-      const displayMaxHz = timeFrame?.mode === "file" ? Math.min(settings.fftMaxHz, timeFrame.imuHz / 2) : maxHz;
-      let peakAmp = 0;
-      for (let i = 0; i < amps.length; i++) peakAmp = Math.max(peakAmp, amps[i]);
-      drawPanel(ctx, theme, MARGIN + panelW + GAP, y, panelW, panelH, {
-        title: `FFT — ${axisNames[axis]} axis`,
-        xs: freqs,
-        ys: amps,
-        n: freqs.length,
-        xMin: 4,
-        xMax: displayMaxHz,
-        yMin: 0,
-        yMax: Math.max(2, peakAmp * 1.05),
-        xLabel: "Hz",
-        yLabel: "m/s²",
-        color,
-      });
-    }
+    const liveMaxHz = settings.fftMaxHz;
+    const displayMaxHz = timeFrame?.mode === "file" ? Math.min(settings.fftMaxHz, timeFrame.imuHz / 2) : liveMaxHz;
+    let peakAmp = 0;
+    for (let i = 0; i < amps.length; i++) peakAmp = Math.max(peakAmp, amps[i]);
+    drawPanel(ctx, theme, MARGIN + panelW + GAP, y, panelW, panelH, {
+      title: `FFT — ${axisNames[axis]} axis`,
+      xs: freqs,
+      ys: amps,
+      n: freqs.length,
+      xMin: 4,
+      xMax: displayMaxHz,
+      yMin: 0,
+      yMax: Math.max(2, peakAmp * 1.05),
+      xLabel: "Hz",
+      yLabel: "m/s²",
+      color,
+    });
   }
 
   // Footer.
@@ -243,7 +248,7 @@ export async function composeDashboardPng(): Promise<Blob> {
   ctx.textAlign = "left";
   ctx.fillText(
     `packets ${diag.packetRate} Hz · lost ${diag.lostPackets} · malformed ${diag.malformedLines} · ` +
-      `wire ${(diag.wireUtilization * 100).toFixed(0)}% · ${__APP_VERSION__} (${__BUILD_HASH__})`,
+      `wire ${formatDataRate(diag.wireBytesPerSecond)} · ${__APP_VERSION__} (${__BUILD_HASH__})`,
     MARGIN,
     HEIGHT - 12,
   );

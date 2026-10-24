@@ -1,18 +1,20 @@
 # Vibro Web
 
 Real-time vibration analysis in the browser — a port of the [Vibro desktop app](https://github.com/sentoxo/vibro)
-(PyQt6 + pyserial) to a static web app. No backend: the app talks to the CH340 ADXL345 sensor
-directly over **Web Serial**, parses the same `S<sid>,<seq>,<x>,<y>,<z>` text protocol, and keeps
-the desktop's math (FFT, RMS, peaks, DVB1 format) bit-for-bit compatible.
+(PyQt6 + pyserial) to a static web app. No backend: the app talks to the ADXL345 sensor directly
+over **Web Serial** (STM32 USB CDC / virtual COM port, also works with older CH340 units), parses
+the same `S<sid>,<seq>,<x>,<y>,<z>` text protocol, and keeps the desktop's math (FFT, RMS, peaks,
+DVB1 format) bit-for-bit compatible.
 
 **Live demo:** the deployed app autoplays a synthetic stream — no hardware needed.
 
 ## Features
 
-- **Live sensor** over Web Serial (Chrome/Edge): CH340 at 921600 baud, desktop startup handshake
-  (`call all` → 3 s → `start stream`), auto-reconnect, one-time packet-loss modal.
+- **Live sensor** over Web Serial (Chrome/Edge): STM32 USB CDC (or CH340), desktop startup handshake
+  (`call all` → 3 s → `start stream`), automatic reconnect after an unplug/USB dropout, clean
+  disconnect/reconnect without false packet-loss warnings, one-time packet-loss modal.
 - **Six charts**: time-domain X/Y/Z + FFT X/Y/Z, 2 s window with 0.2 s zoom, RPM marker lines,
-  FFT peak labels, cursor sync.
+  FFT peak labels, cursor sync; Freeze/Resume sits in the top header.
 - **Hero RMS**: ISO-style vector resultant `√(x²+y²+z²)` with 10 s rolling avg/min/max and sparkline.
 - **File mode**: open multi-burst `.bin` (DVB1 container) files, pick a burst, full-length true-N FFT
   (6400 samples = 0.5 Hz resolution via Bluestein chirp-z).
@@ -21,6 +23,8 @@ the desktop's math (FFT, RMS, peaks, DVB1 format) bit-for-bit compatible.
   `MOTOR_TELEMETRY` 139), RPM readout, safety dialog, stop ramp — desktop parity.
 - **Export**: dashboard PNG + DVB1 snapshot; filenames follow the desktop `{base}{index:02d}_{power}`
   convention; byte-compatible with the Python recorder (np.rint ties-to-even quantization).
+- **Diagnostics**: packet rate, sequence loss, malformed lines, measured link rate in **KB/s**
+  (USB CDC has no meaningful baud percentage), render time and FPS.
 - **PWA**: installable, offline shell, update prompt.
 - Works offline after first load; settings persist in `localStorage`.
 

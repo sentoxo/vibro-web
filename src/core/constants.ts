@@ -16,19 +16,18 @@ export const SERIAL_BUFFER_BYTES = 65536; // BYOB read buffer + port open buffer
 export const ACCUMULATOR_MAX_BYTES = 4096; // cap for partial-line accumulator
 export const NO_DATA_TIMEOUT_MS = 3000;
 export const RECONNECT_INTERVAL_MS = 1000;
-export const RECONNECT_GIVEUP_MS = 30000;
-export const WIRE_BITS_PER_BYTE = 10; // 8N1: start + 8 data + stop
-export const WIRE_WARN_UTILIZATION = 0.8;
-export const WIRE_IMU_WARN_HZ = 2500; // text protocol may not fit above this
 
-// CH340 USB identity filters for requestPort(); clones use other PIDs, so a
-// "show all" fallback is required.
-export const CH340_FILTERS: SerialPortRequestOptions["filters"] = [
+// USB identity filters for requestPort(): the sensor is an STM32 virtual COM
+// port (0x0483:0x5740), while older units used a CH340 bridge. Unknown clones
+// still need the unfiltered "show all" fallback.
+export const SENSOR_FILTERS: SerialPortRequestOptions["filters"] = [
+  { usbVendorId: 0x0483, usbProductId: 0x5740 },
   { usbVendorId: 0x1a86, usbProductId: 0x7523 },
   { usbVendorId: 0x1a86, usbProductId: 0x5523 },
   { usbVendorId: 0x1a86, usbProductId: 0x7522 },
 ];
 export const CH340_VENDOR_ID = 0x1a86;
+export const STM32_VENDOR_ID = 0x0483;
 
 // === Physics / units ===
 export const G = 9.80665;

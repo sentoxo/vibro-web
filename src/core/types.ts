@@ -81,7 +81,7 @@ export interface Diagnostics {
   seqResets: number;
   malformedLines: number;
   lastMalformed: string;
-  wireUtilization: number; // 0..1
+  wireBytesPerSecond: number; // measured payload throughput (bytes/s)
   avgLineBytes: number;
   bufferOverruns: number;
   renderMs: number;

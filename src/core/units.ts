@@ -49,6 +49,13 @@ export function formatPercent(fraction: number, digits = 0): string {
   return `${(fraction * 100).toFixed(digits)}%`;
 }
 
+/** Measured serial payload rate in KB/s (decimal kilobytes). */
+export function formatDataRate(bytesPerSecond: number): string {
+  if (!Number.isFinite(bytesPerSecond)) return "--";
+  const kb = bytesPerSecond / 1000;
+  return `${kb >= 100 ? kb.toFixed(0) : kb.toFixed(1)} KB/s`;
+}
+
 /** `1a86:7523` style USB id string for serial device labels. */
 export function formatUsbIds(vendorId?: number, productId?: number): string {
   if (vendorId === undefined || productId === undefined) return "";

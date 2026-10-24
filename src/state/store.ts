@@ -13,8 +13,6 @@ import {
   RENDER_HZ,
   RMS_STATISTICS_WINDOW_SECONDS,
   SNAPSHOT_SECONDS,
-  WIRE_IMU_WARN_HZ,
-  WIRE_WARN_UTILIZATION,
   ZOOM_WINDOW_SECONDS,
 } from "../core/constants";
 import { findPeaks } from "../core/peaks";
@@ -81,7 +79,7 @@ const EMPTY_DIAGNOSTICS: Diagnostics = {
   seqResets: 0,
   malformedLines: 0,
   lastMalformed: "",
-  wireUtilization: 0,
+  wireBytesPerSecond: 0,
   avgLineBytes: 0,
   bufferOverruns: 0,
   renderMs: 0,
@@ -154,7 +152,6 @@ class Store {
   private fpsWindowStart = 0;
   private renderMsEma = 0;
   private lossToastShown = false;
-  private wireToastShown = false;
   private frameListeners: TimeFrameListener[] = [];
   private fftListeners: FftFrameListener[] = [];
   private readonly spectra: { freqs: Float64Array; amps: Float64Array }[] = [
@@ -174,7 +171,6 @@ class Store {
       onStatus: (status) => this.applyStatus(status),
       onDiagnostics: (patch) => {
         this.diagnostics.value = { ...this.diagnostics.peek(), ...patch };
-        this.checkWireWarning();
       },
       onFirstPacketLoss: () => this.notifyPacketLoss(),
     };
@@ -230,13 +226,13 @@ class Store {
     if (resetStats) {
       this.diagnostics.value = { ...EMPTY_DIAGNOSTICS };
       this.lossToastShown = false;
-      this.wireToastShown = false;
     }
   }
 
   async startDemo(seed?: number, navigate = true): Promise<void> {
     await this.stopCurrentSource();
     this.clearData(true);
+    this.paused.value = false;
     this.staticMode.value = false;
     this.bursts.value = [];
     this.selectedBurst.value = -1;
@@ -300,6 +296,7 @@ class Store {
     this.staticMode.value = false;
     this.screen.value = "dashboard";
     this.connection.value = "connecting";
+    this.paused.value = false;
     this.clearData(true);
     this.source = this.serialSource;
     this.startRenderLoop();
@@ -310,6 +307,7 @@ class Store {
     await this.serialSource.stop();
     this.stopRenderLoop();
     this.source = null;
+    this.paused.value = false;
     this.connection.value = "idle";
     this.sourceMessage.value = "Disconnected";
   }
@@ -317,6 +315,7 @@ class Store {
   async goLanding(): Promise<void> {
     await this.stopCurrentSource();
     this.clearData(true);
+    this.paused.value = false;
     this.connection.value = "idle";
     this.staticMode.value = false;
     this.bursts.value = [];
@@ -328,9 +327,6 @@ class Store {
     this.connection.value = status.state;
     if (status.deviceLabel) this.deviceLabel.value = status.deviceLabel;
     this.sourceMessage.value = status.message;
-    if (status.state === "streaming") {
-      this.wireToastShown = false;
-    }
     if (status.state === "error") {
       pushToast({ kind: "error", title: "Connection", message: status.message });
     }
@@ -653,24 +649,6 @@ class Store {
     this.lossToastShown = true;
     // Desktop shows a modal popup once per session and keeps running.
     this.lostPacketWarning.value = true;
-  }
-
-  private checkWireWarning(): void {
-    const diag = this.diagnostics.peek();
-    if (diag.wireUtilization > WIRE_WARN_UTILIZATION && !this.wireToastShown) {
-      this.wireToastShown = true;
-      pushToast({
-        kind: "warn",
-        title: "Wire utilization above 80%",
-        message: "Dropped packets may be bandwidth-bound. Lower IMU Hz or shorten lines.",
-        dedupeKey: "wire-util",
-      });
-    }
-  }
-
-  /** Settings warn chip: text protocol ceiling (plan §3.3). */
-  get imuRateMayNotFit(): boolean {
-    return this.sourceKind.peek() === "serial" && this.settings.peek().imuHz > WIRE_IMU_WARN_HZ;
   }
 
   // === Export data ===

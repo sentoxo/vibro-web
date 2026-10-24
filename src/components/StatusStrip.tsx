@@ -1,8 +1,8 @@
-// Bottom status strip: packets, loss, malformed, wire %, render, version
+// Bottom status strip: packets, loss, malformed, wire KB/s, render, version
 // (plan §5.3). Replaces the desktop CPU-usage readout.
 
 import { store } from "../state/store";
-import { formatInt, formatPercent } from "../core/units";
+import { formatDataRate, formatInt } from "../core/units";
 
 export function StatusStrip() {
   const diag = store.diagnostics.value;
@@ -19,8 +19,8 @@ export function StatusStrip() {
         malformed <b class="tabular">{formatInt(diag.malformedLines)}</b>
       </span>
       {source === "serial" && (
-        <span class={diag.wireUtilization > 0.8 ? "status-warning" : ""}>
-          wire <b class="tabular">{formatPercent(diag.wireUtilization)}</b>
+        <span>
+          wire <b class="tabular">{formatDataRate(diag.wireBytesPerSecond)}</b>
         </span>
       )}
       {diag.bufferOverruns > 0 && (

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { clamp, dvb1RawToMs2, formatUsbIds, ms2PerLsb, ms2ToDvb1Raw, roundHalfToEven } from "../../src/core/units";
+import {
+  clamp,
+  dvb1RawToMs2,
+  formatDataRate,
+  formatUsbIds,
+  ms2PerLsb,
+  ms2ToDvb1Raw,
+  roundHalfToEven,
+} from "../../src/core/units";
 import { DVB1_LSB_TO_MS2 } from "../../src/core/constants";
 
 describe("roundHalfToEven (np.rint parity)", () => {
@@ -43,6 +51,14 @@ describe("unit conversion", () => {
   it("formatUsbIds renders 1a86:7523", () => {
     expect(formatUsbIds(0x1a86, 0x7523)).toBe("1a86:7523");
     expect(formatUsbIds(undefined, undefined)).toBe("");
+  });
+
+  it("formatDataRate reports measured KB/s, not a baud percentage", () => {
+    expect(formatDataRate(0)).toBe("0.0 KB/s");
+    expect(formatDataRate(4260)).toBe("4.3 KB/s");
+    expect(formatDataRate(96_000)).toBe("96.0 KB/s");
+    expect(formatDataRate(1_234_567)).toBe("1235 KB/s");
+    expect(formatDataRate(Number.NaN)).toBe("--");
   });
 
   it("clamp", () => {

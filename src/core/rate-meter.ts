@@ -1,6 +1,7 @@
-// Packet rate, sequence-loss tracking and wire utilization (plan §6.6).
-
-import { WIRE_BITS_PER_BYTE } from "./constants";
+// Packet rate, sequence-loss tracking and measured data rate (plan §6.6).
+// Web Serial talks to an STM32 USB CDC device: the host link is USB full
+// speed, not the nominal UART baud rate, so the useful figure is the measured
+// payload rate (KB/s) rather than a fabricated percentage of a baud budget.
 
 /** Sequence-gap tracking identical to the desktop `handle_sample` logic. */
 export class SeqTracker {
@@ -43,8 +44,9 @@ export class SeqTracker {
 }
 
 /**
- * Sliding 1 s packet-rate meter with wire utilization. `onPacket` is called
- * with the wire size of each valid line; `tick` runs once per second.
+ * Sliding 1 s packet-rate meter. `onPacket` is called with the wire size of
+ * each valid line; `tick` runs once per second and reports packets/s plus the
+ * measured payload throughput in bytes/s.
  */
 export class RateMeter {
   private packets = 0;
@@ -52,12 +54,9 @@ export class RateMeter {
   private windowStartMs: number;
   packetRate = 0; // packets/s of the most recently completed window
   avgLineBytes = 0;
-  private readonly baudRate: number;
-  private readonly bitsPerByte: number;
+  bytesPerSecond = 0;
 
-  constructor(baudRate: number, nowMs: number, bitsPerByte = WIRE_BITS_PER_BYTE) {
-    this.baudRate = baudRate;
-    this.bitsPerByte = bitsPerByte;
+  constructor(nowMs: number) {
     this.windowStartMs = nowMs;
   }
 
@@ -66,23 +65,19 @@ export class RateMeter {
     this.bytes += lineBytes;
   }
 
-  tick(nowMs: number): { packetRate: number; wireUtilization: number; avgLineBytes: number } {
+  tick(nowMs: number): { packetRate: number; bytesPerSecond: number; avgLineBytes: number } {
     const elapsedS = Math.max(0.001, (nowMs - this.windowStartMs) / 1000);
     this.packetRate = this.packets / elapsedS;
     this.avgLineBytes = this.packets > 0 ? this.bytes / this.packets : 0;
     this.packets = 0;
     this.bytes = 0;
     this.windowStartMs = nowMs;
-    const wireUtilization = (this.packetRate * this.avgLineBytes * this.bitsPerByte) / this.baudRate;
+    this.bytesPerSecond = this.packetRate * this.avgLineBytes;
     return {
       packetRate: this.packetRate,
-      wireUtilization,
+      bytesPerSecond: this.bytesPerSecond,
       avgLineBytes: this.avgLineBytes,
     };
-  }
-
-  get wireUtilization(): number {
-    return (this.packetRate * this.avgLineBytes * this.bitsPerByte) / this.baudRate;
   }
 
   clear(nowMs: number): void {
@@ -90,6 +85,7 @@ export class RateMeter {
     this.bytes = 0;
     this.packetRate = 0;
     this.avgLineBytes = 0;
+    this.bytesPerSecond = 0;
     this.windowStartMs = nowMs;
   }
 }

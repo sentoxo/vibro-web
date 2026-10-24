@@ -47,4 +47,18 @@ test.describe("landing and demo", () => {
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog", { name: "About Vibro" })).toHaveCount(0);
   });
+
+  test("freeze/resume lives in the header and toggles pause", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Explore demo" }).click();
+
+    // The old location (chart-grid toolbar) must no longer hold the control.
+    const grid = page.locator(".chart-grid-wrap");
+    await expect(grid.getByRole("button", { name: "Freeze" })).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Freeze", exact: true }).click();
+    expect(await page.evaluate(() => (window as any).__store.paused.value)).toBe(true);
+    await page.getByRole("button", { name: "Resume", exact: true }).click();
+    expect(await page.evaluate(() => (window as any).__store.paused.value)).toBe(false);
+  });
 });

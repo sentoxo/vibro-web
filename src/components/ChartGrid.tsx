@@ -3,7 +3,6 @@
 import { useEffect } from "preact/hooks";
 import { useSignal } from "@preact/signals";
 import { ChartPanel } from "./ChartPanel";
-import { store } from "../state/store";
 
 const AXES = [0, 1, 2] as const;
 
@@ -24,8 +23,8 @@ export function ChartGrid() {
 
   return (
     <section class="chart-grid-wrap" aria-label="Vibration charts">
-      <div class="chart-grid-bar">
-        {compact.value && (
+      {compact.value && (
+        <div class="chart-grid-bar">
           <div class="axis-tabs" role="tablist" aria-label="Axis selector">
             {AXES.map((axis) => (
               <button
@@ -41,19 +40,8 @@ export function ChartGrid() {
               </button>
             ))}
           </div>
-        )}
-        {store.paused.value ? (
-          <button class="btn btn-small" onClick={() => (store.paused.value = false)}>
-            Resume live
-          </button>
-        ) : (
-          store.sourceKind.peek() !== "file" && (
-            <button class="btn btn-small" onClick={() => (store.paused.value = true)}>
-              Freeze
-            </button>
-          )
-        )}
-      </div>
+        </div>
+      )}
       <div class={`chart-grid ${compact.value ? "chart-grid-compact" : ""}`}>
         {visibleAxes.map((axis) => (
           <ChartPanel key={`t-${axis}`} axis={axis} kind="time" />
