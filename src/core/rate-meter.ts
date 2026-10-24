@@ -9,14 +9,20 @@ export class SeqTracker {
   lostPackets = 0;
   seqResets = 0;
 
-  onSeq(seq: number): { lost: number; reset: boolean } {
+  /**
+   * Track one sequence id. `countGap = false` re-baselines on a jump instead of
+   * counting it as loss (used right after (re)connecting, see LOSS_SETTLE_MS).
+   */
+  onSeq(seq: number, countGap = true): { lost: number; reset: boolean } {
     let lost = 0;
     let reset = false;
     if (this.lastSeq !== null) {
       const gap = seq - this.lastSeq;
       if (gap > 1) {
-        lost = gap - 1;
-        this.lostPackets += lost;
+        if (countGap) {
+          lost = gap - 1;
+          this.lostPackets += lost;
+        }
       } else if (gap <= 0) {
         // Sequence rewound (e.g. device restart); not counted as loss.
         this.seqResets += 1;

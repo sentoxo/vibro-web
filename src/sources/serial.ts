@@ -5,6 +5,12 @@
 // is USB full speed — the nominal baud rate is line coding only. Diagnostics
 // therefore report the measured payload rate in KB/s, not a percentage of a
 // made-up baud budget.
+//
+// Session isolation: every connect starts a new session (monotonic `epoch`).
+// Read loops, parsers, handshake timers and statistics timers are bound to the
+// epoch they were created for, and a manual connect clears all counters. A late
+// chunk or timer from a previous session can therefore never feed the current
+// one (that used to produce phantom sequence-loss warnings after a reconnect).
 
 import {
   ACCUMULATOR_MAX_BYTES,
@@ -12,6 +18,7 @@ import {
   CALL_ALL,
   CALL_ALL_TO_STREAM_MS,
   CH340_VENDOR_ID,
+  LOSS_SETTLE_MS,
   NO_DATA_TIMEOUT_MS,
   PACKET_STATS_INTERVAL_MS,
   RECONNECT_INTERVAL_MS,
@@ -75,7 +82,15 @@ export class SerialSource {
   private reader: ReadableStreamDefaultReader<Uint8Array> | ReadableStreamBYOBReader | null = null;
   private running = false;
   private userStop = true;
+  /**
+   * Session generation. Incremented by every connect attempt and by stop();
+   * anything bound to an older value is stale and must not touch state.
+   */
+  private epoch = 0;
   private firstLineSeen = false;
+  /** Until this timestamp, sequence gaps start a new baseline instead of
+   * counting as loss (USB CDC backlog drain right after (re)connecting). */
+  private settleUntil = 0;
   private noDataTimer: ReturnType<typeof setTimeout> | null = null;
   private streamTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -132,8 +147,12 @@ export class SerialSource {
   }
 
   async stop(): Promise<void> {
+    // Invalidate the active session first: a pending read, handshake timer or
+    // stats tick from now on is stale and must be ignored.
+    this.epoch += 1;
     this.userStop = true;
     this.running = false;
+    navigator.serial?.removeEventListener?.("disconnect", this.onDisconnectEvent);
     this.clearTimers();
     await this.closePort(true);
     this.setStatus("idle", "Disconnected");
@@ -166,12 +185,18 @@ export class SerialSource {
 
   private async openAndStream(): Promise<void> {
     if (!this.port) return;
+    const epoch = ++this.epoch;
     this.userStop = false;
     this.running = true;
+    // Registered once per source (addEventListener dedupes the same function);
+    // `stop()` removes it. Per-loop registration would let a finishing loop
+    // remove the listener that the new session depends on.
+    navigator.serial?.addEventListener?.("disconnect", this.onDisconnectEvent);
     this.setStatus("connecting", "Opening port…");
     try {
       await this.openPort();
     } catch (error) {
+      if (epoch !== this.epoch) return; // superseded by stop()/another connect
       // Port busy / permission denied.
       this.setStatus(
         "error",
@@ -182,18 +207,25 @@ export class SerialSource {
       await this.closePort(false);
       return;
     }
+    if (epoch !== this.epoch) {
+      // Superseded: stop() won the race. Close what we just opened, but never
+      // touch a newer session's port (userStop is false in that case).
+      if (this.userStop) await this.closePort(false);
+      return;
+    }
     if (!this.running || this.userStop) {
       await this.closePort(false);
       return;
     }
-    // A manual connect starts a fresh session: every counter (including the
-    // packet-loss total) begins at zero and the first sequence id is a new
-    // baseline. Disconnecting and connecting again without unplugging the
-    // sensor must never report the samples produced while detached as loss.
+    // A manual connect starts a completely fresh session: every counter
+    // (including the packet-loss total) begins at zero and the first sequence
+    // id is a new baseline. Disconnecting and connecting again without
+    // unplugging the sensor must never report the samples produced while
+    // detached as loss, and must never show the lost-packet warning.
     this.seqTracker.clear();
     this.streamErrors = 0;
-    this.prepareStream();
-    void this.readLoop();
+    this.prepareSession(epoch);
+    void this.readLoop(epoch);
   }
 
   private async openPort(): Promise<void> {
@@ -212,19 +244,23 @@ export class SerialSource {
   }
 
   /** Reset per-connection parser/rate state and start the handshake timers. */
-  private prepareStream(): void {
+  private prepareSession(epoch: number): void {
     this.firstLineSeen = false;
+    this.settleUntil = 0;
+    // Samples buffered from the previous session must not leak into this one.
+    this.emitter.count = 0;
     this.parser.reset();
     this.rateMeter.clear(performance.now());
-    this.armNoDataTimer();
-    this.startStatsTimer();
-    void this.writeInit();
+    this.armNoDataTimer(epoch);
+    this.startStatsTimer(epoch);
+    void this.writeInit(epoch);
   }
 
-  private armNoDataTimer(): void {
+  private armNoDataTimer(epoch: number): void {
     if (this.noDataTimer !== null) clearTimeout(this.noDataTimer);
     this.noDataTimer = setTimeout(() => {
-      if (!this.firstLineSeen && this.running) {
+      this.noDataTimer = null;
+      if (epoch === this.epoch && !this.firstLineSeen && this.running) {
         this.setStatus("connecting", "No data — check the device and that it is not open in another app.");
       }
     }, NO_DATA_TIMEOUT_MS);
@@ -240,14 +276,15 @@ export class SerialSource {
     }
   }
 
-  private async writeInit(): Promise<void> {
+  private async writeInit(epoch: number): Promise<void> {
     // Desktop handshake: `call all` (motor query), then `start stream` after
     // ~3 s. The stream command is fire-and-forget so opening stays responsive.
     await this.writeText(CALL_ALL);
+    if (epoch !== this.epoch) return;
     if (this.streamTimer !== null) clearTimeout(this.streamTimer);
     this.streamTimer = setTimeout(() => {
       this.streamTimer = null;
-      if (this.running && !this.userStop) void this.writeText(START_STREAM).catch(() => {});
+      if (epoch === this.epoch && this.running && !this.userStop) void this.writeText(START_STREAM).catch(() => {});
     }, CALL_ALL_TO_STREAM_MS);
   }
 
@@ -265,13 +302,16 @@ export class SerialSource {
 
   private async closePort(sendStop: boolean): Promise<void> {
     if (sendStop) await this.writeStop();
-    try {
-      if (this.reader) {
-        this.reader.cancel().catch(() => {});
-        this.reader = null;
+    const reader = this.reader;
+    this.reader = null;
+    if (reader) {
+      // Wait for the pending read to unwind so the port can actually close
+      // (Chrome refuses to close a port whose readable is still locked).
+      try {
+        await Promise.race([reader.cancel(), new Promise((resolve) => setTimeout(resolve, 250))]);
+      } catch {
+        // Read already failed (device loss).
       }
-    } catch {
-      // ignore
     }
     try {
       if (this.port) await this.port.close();
@@ -280,48 +320,45 @@ export class SerialSource {
     }
   }
 
-  private async readLoop(): Promise<void> {
-    navigator.serial?.addEventListener?.("disconnect", this.onDisconnectEvent);
-    try {
-      while (this.running && !this.userStop) {
-        // The device can vanish between attempts (or right after open). Do not
-        // silently idle: fall into the reconnect loop instead.
-        if (!this.port) break;
-        if (!this.port.readable) {
-          await this.reconnect();
-          continue;
-        }
-        const reader = this.port.readable.getReader({ mode: "byob" });
-        this.reader = reader;
-        try {
-          while (this.running) {
-            const { value, done } = await reader.read(new Uint8Array(SERIAL_BUFFER_BYTES));
-            if (done) break;
-            this.parser.push(value);
-            this.emitter.flush(performance.now());
-          }
-        } catch (error) {
-          // Buffer overrun / framing / break / device-loss errors: count and
-          // reconnect (a lost device rejects the pending read).
-          this.streamErrors += 1;
-          this.handlers.onDiagnostics({ bufferOverruns: this.streamErrors });
-          this.setStatus(
-            "reconnecting",
-            `Serial read error: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        } finally {
-          try {
-            reader.releaseLock();
-          } catch {
-            // Reader already released.
-          }
-          if (this.reader === reader) this.reader = null;
-        }
-        if (!this.running || this.userStop) break;
-        await this.reconnect();
+  private async readLoop(epoch: number): Promise<void> {
+    while (epoch === this.epoch && this.running && !this.userStop) {
+      // The device can vanish between attempts (or right after open). Do not
+      // silently idle: fall into the reconnect loop instead.
+      if (!this.port) break;
+      if (!this.port.readable) {
+        await this.reconnect(epoch);
+        return;
       }
-    } finally {
-      navigator.serial?.removeEventListener?.("disconnect", this.onDisconnectEvent);
+      const reader = this.port.readable.getReader({ mode: "byob" });
+      this.reader = reader;
+      try {
+        while (epoch === this.epoch && this.running) {
+          const { value, done } = await reader.read(new Uint8Array(SERIAL_BUFFER_BYTES));
+          if (done) break;
+          // A chunk delivered after the session ended belongs to the old
+          // session; drop it instead of feeding it to the new one.
+          if (epoch !== this.epoch) return;
+          this.parser.push(value);
+          this.emitter.flush(performance.now());
+        }
+      } catch (error) {
+        if (epoch !== this.epoch) return;
+        // Buffer overrun / framing / break / device-loss errors: count and
+        // reconnect (a lost device rejects the pending read).
+        this.streamErrors += 1;
+        this.handlers.onDiagnostics({ bufferOverruns: this.streamErrors });
+        this.setStatus("reconnecting", `Serial read error: ${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        try {
+          reader.releaseLock();
+        } catch {
+          // Reader already released.
+        }
+        if (this.reader === reader) this.reader = null;
+      }
+      if (epoch !== this.epoch || !this.running || this.userStop) break;
+      await this.reconnect(epoch);
+      return;
     }
   }
 
@@ -374,28 +411,39 @@ export class SerialSource {
    * totals are kept, but the first packet after the outage is a new baseline so
    * data produced while detached is never counted as lost.
    */
-  private async reconnect(): Promise<void> {
+  private async reconnect(epoch: number): Promise<void> {
+    if (epoch !== this.epoch) return;
     if (!this.getSettings().autoReconnect || !this.port) {
       this.setStatus("idle", "Sensor disconnected");
       this.running = false;
       return;
     }
     let attempt = 0;
-    while (this.running && !this.userStop) {
+    while (epoch === this.epoch && this.running && !this.userStop) {
       attempt += 1;
       const candidate = await this.findReconnectPort();
+      if (epoch !== this.epoch) return;
       if (candidate) this.port = candidate;
       try {
         await this.openPort();
+        if (epoch !== this.epoch) {
+          if (this.userStop) await this.closePort(false);
+          return;
+        }
         if (!this.running || this.userStop) {
           await this.closePort(false);
           return;
         }
+        // Same stream, new link: keep loss totals, but re-baseline the sequence
+        // so the outage gap is not reported as loss.
         this.seqTracker.resetTracking(true);
-        this.prepareStream();
+        const next = ++this.epoch;
+        this.prepareSession(next);
         this.setStatus("connecting", "Reconnected — waiting for data…");
+        void this.readLoop(next);
         return;
       } catch {
+        if (epoch !== this.epoch) return;
         this.setStatus(
           "reconnecting",
           attempt === 1 ? "Sensor disconnected. Reconnecting…" : `Waiting for sensor… (attempt ${attempt})`,
@@ -417,9 +465,15 @@ export class SerialSource {
     });
   }
 
-  private startStatsTimer(): void {
+  private startStatsTimer(epoch: number): void {
     if (this.statsTimer !== null) clearInterval(this.statsTimer);
-    this.statsTimer = setInterval(() => {
+    const timer = setInterval(() => {
+      // A timer from a closed session must never patch the current diagnostics
+      // (it could resurrect an old lost-packet count after a reconnect).
+      if (epoch !== this.epoch) {
+        clearInterval(timer);
+        return;
+      }
       const stats = this.rateMeter.tick(performance.now());
       this.handlers.onDiagnostics({
         packetRate: Math.round(stats.packetRate),
@@ -430,18 +484,26 @@ export class SerialSource {
         seqResets: this.seqTracker.seqResets,
       });
     }, PACKET_STATS_INTERVAL_MS);
+    this.statsTimer = timer;
   }
 
   private handleLine(line: ParsedLine): void {
     this.rateMeter.onPacket(line.bytes);
     if (!this.firstLineSeen) {
       this.firstLineSeen = true;
-      if (this.noDataTimer !== null) clearTimeout(this.noDataTimer);
+      // A freshly opened (or reopened) USB CDC link may still be draining its
+      // backlog and dropping samples while the host catches up. Gaps observed
+      // during this settling window belong to session startup, not loss.
+      this.settleUntil = performance.now() + LOSS_SETTLE_MS;
+      if (this.noDataTimer !== null) {
+        clearTimeout(this.noDataTimer);
+        this.noDataTimer = null;
+      }
       this.setStatus("streaming", "Streaming");
     }
     if (line.sid !== 0) return; // only sensor 0 is buffered (desktop parity)
 
-    const { lost } = this.seqTracker.onSeq(line.seq);
+    const { lost } = this.seqTracker.onSeq(line.seq, performance.now() >= this.settleUntil);
     if (lost > 0) {
       this.handlers.onDiagnostics({ lostPackets: this.seqTracker.lostPackets });
       this.handlers.onFirstPacketLoss();

@@ -93,7 +93,9 @@ test.describe("mock serial sensor", () => {
       .toBe("idle");
 
     // The device keeps producing frames while detached; reconnecting must use
-    // a fresh sequence baseline and a zero loss counter.
+    // a fresh sequence baseline and a zero loss counter. The fake also drops a
+    // few samples on the second chunk after reopening (USB CDC backlog drain),
+    // which must not be reported as loss either.
     await page.waitForTimeout(1200);
     await page.getByRole("button", { name: "Connect", exact: true }).click();
     await page.getByRole("button", { name: /STM32 VCP/ }).click();

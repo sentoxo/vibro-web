@@ -24,6 +24,20 @@ describe("SeqTracker (desktop handle_sample parity)", () => {
     expect(tracker.lostPackets).toBe(9);
   });
 
+  it("onSeq(seq, false) rebaselines on a jump without counting loss", () => {
+    const tracker = new SeqTracker();
+    tracker.onSeq(100);
+    // Session settle window: a gap right after (re)connecting starts a new
+    // baseline instead of being reported as loss.
+    expect(tracker.onSeq(200, false).lost).toBe(0);
+    expect(tracker.lostPackets).toBe(0);
+    expect(tracker.lastSeq).toBe(200);
+    // Once the window is over, real gaps count again.
+    expect(tracker.onSeq(201).lost).toBe(0);
+    expect(tracker.onSeq(205).lost).toBe(3);
+    expect(tracker.lostPackets).toBe(3);
+  });
+
   it("clear() starts a completely fresh session", () => {
     const tracker = new SeqTracker();
     tracker.onSeq(10);

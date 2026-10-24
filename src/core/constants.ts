@@ -16,6 +16,11 @@ export const SERIAL_BUFFER_BYTES = 65536; // BYOB read buffer + port open buffer
 export const ACCUMULATOR_MAX_BYTES = 4096; // cap for partial-line accumulator
 export const NO_DATA_TIMEOUT_MS = 3000;
 export const RECONNECT_INTERVAL_MS = 1000;
+// After a (re)connect the USB CDC link can still be draining its backlog and
+// dropping samples while the host catches up. Sequence gaps seen during this
+// window start a fresh baseline instead of being reported as packet loss, so a
+// manual reconnect never raises the lost-packet warning.
+export const LOSS_SETTLE_MS = 1500;
 
 // USB identity filters for requestPort(): the sensor is an STM32 virtual COM
 // port (0x0483:0x5740), while older units used a CH340 bridge. Unknown clones

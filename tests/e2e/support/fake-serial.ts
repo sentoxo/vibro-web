@@ -32,6 +32,10 @@ declare global {
 export function installFakeSerial(opts?: { simulateLoss?: boolean }): void {
   const simulateLoss = opts?.simulateLoss ?? true;
   const enc = new TextEncoder();
+  // A reopened CDC link resumes with the stream already in flight: emulate the
+  // backlog drain dropping a few samples shortly after the first reopened chunk
+  // (this is what produced a phantom loss warning on real hardware).
+  let pendingReopenGap = 0;
 
   class FakePort {
     readable: ReadableStream<Uint8Array> | null = null;
@@ -79,6 +83,7 @@ export function installFakeSerial(opts?: { simulateLoss?: boolean }): void {
     async open(): Promise<void> {
       if (this.opened) throw new DOMException("The port is already open.", "InvalidStateError");
       this.openCount += 1;
+      if (this.byteStream && this.openCount > 1) pendingReopenGap = 2;
       this.opened = true;
       this.makeStreams();
     }
@@ -131,14 +136,21 @@ export function installFakeSerial(opts?: { simulateLoss?: boolean }): void {
     const text = new TextDecoder().decode(chunk);
     if (text.includes("start stream") && !state.pumpStarted) {
       state.pumpStarted = true;
-      // 400 lines/s, one deliberate 3-packet gap at seq 500.
+      // 400 lines/s, one deliberate 3-packet gap at seq 900 (2.25 s in, i.e.
+      // past the post-connect settling window).
       setInterval(() => {
         const port = state.sensor as FakePort | null;
         if (!port) return;
+        if (pendingReopenGap > 0) {
+          pendingReopenGap -= 1;
+          // Let the first chunk after reopen establish the baseline, then drop
+          // samples on the following chunk (backlog drained mid-stream).
+          if (pendingReopenGap === 0) state.seq += 7;
+        }
         let out = "";
         for (let i = 0; i < 20; i++) {
           state.seq += 1;
-          if (simulateLoss && state.seq === 500) state.seq += 3;
+          if (simulateLoss && state.seq === 900) state.seq += 3;
           const t = state.seq / 800;
           const x = Math.round(2048 * Math.sin(2 * Math.PI * 48 * t));
           const y = Math.round(1024 * Math.sin(2 * Math.PI * 120 * t));

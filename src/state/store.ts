@@ -297,6 +297,8 @@ class Store {
     this.screen.value = "dashboard";
     this.connection.value = "connecting";
     this.paused.value = false;
+    // A new session must not inherit the previous session's loss warning.
+    this.lostPacketWarning.value = false;
     this.clearData(true);
     this.source = this.serialSource;
     this.startRenderLoop();
@@ -308,6 +310,7 @@ class Store {
     this.stopRenderLoop();
     this.source = null;
     this.paused.value = false;
+    this.lostPacketWarning.value = false;
     this.connection.value = "idle";
     this.sourceMessage.value = "Disconnected";
   }

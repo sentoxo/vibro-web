@@ -61,10 +61,15 @@ scripts/         gen_golden.py (fixture regeneration), validate_export.py (byte-
   the web→Python direction.
 - **Serial**: `call all\n` on open → 3 s → `start stream\n`; packet rate counts all valid lines;
   loss = seq gaps on sid==0 lines (`gap = seq - last_seq`, no mod-wrap normalization);
-  first loss in a session opens a one-time modal. A manual connect clears the counters and uses
-  a fresh sequence baseline, so disconnect → connect without unplugging reports zero loss.
-  Automatic reconnect keeps session totals but re-baselines seq (the outage gap is not loss) and
-  re-acquires the port from `navigator.serial.getPorts()` (Chrome issues a new handle after replug).
+  first loss in a session opens a one-time modal. A manual connect starts a **new session**:
+  counters reset, the first sequence id is a new baseline, and the previous session's loss
+  dialog is dismissed. Each (re)connect also gets a new `epoch`; read loops, parsers, handshake
+  timers and stats timers bound to an older epoch are ignored, so late chunks from the closed
+  session can never feed the new one. The first `LOSS_SETTLE_MS` (1.5 s) of a session re-baselines
+  seq jumps instead of counting them: a reopened USB CDC link drains a backlog and can drop
+  samples while the host catches up. Automatic reconnect keeps session totals but re-baselines seq
+  (the outage gap is not loss) and re-acquires the port from `navigator.serial.getPorts()`
+  (Chrome issues a new handle after replug).
 - **Link rate**: diagnostics show measured payload `rate × avgLineBytes` in KB/s. Do not compute a
   percentage of the nominal baud rate: the sensor is an STM32 USB CDC device (USB full speed), so
   921600 is line coding, not the transport ceiling.
@@ -135,7 +140,12 @@ E2E downloads `tests/.artifacts/exported.bin` during the file-mode spec; the CI 
 - **Fake serial reconnect**: the mock port recreates its streams on `open()` and is nullable when
   closed (real `SerialPort.readable`/`writable` are null after close). `simulateSensorLoss()`
   errors the pending read and dispatches a `disconnect` event; the pump keeps advancing `seq`
-  while detached, which is exactly the no-loss baseline test for auto-reconnect.
+  while detached, which is exactly the no-loss baseline test for auto-reconnect. On the second
+  `open()` (manual or automatic reconnect) the pump drops 7 packets one chunk after the baseline,
+  reproducing the real-hardware post-reopen backlog gap that must **not** raise the loss warning.
+- **Session epochs**: `SerialSource` binds each read loop/timer to an `epoch`; `stop()` and every
+  connect bump it. Don't move cross-session state (parser, seq tracker, stats patches) outside
+  that guard — a stale callback resurrecting `lostPackets` was the phantom-warning bug.
 
 ## Definition of done (any feature change)
 
