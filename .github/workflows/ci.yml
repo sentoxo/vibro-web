@@ -45,6 +45,10 @@ jobs:
         run: npm run test:e2e
       - name: Validate web-exported DVB1 with the desktop Python parser
         run: |
+          # The parity gate parses the export with the desktop app's own utils.parse_dvb1_file,
+          # which lives in the sibling oracle repo at ../vibro (see AGENTS.md). Clone it
+          # unauthenticated: vibro is public, so no cross-repo token scope is needed.
+          git clone --depth 1 https://github.com/sentoxo/vibro "$GITHUB_WORKSPACE/../vibro"
           python3 -m pip install --quiet numpy pyserial
           python3 scripts/validate_export.py tests/.artifacts/exported.bin
       - uses: actions/upload-artifact@v4
