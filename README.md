@@ -6,7 +6,8 @@ over **Web Serial** (STM32 USB CDC / virtual COM port, also works with older CH3
 the same `S<sid>,<seq>,<x>,<y>,<z>` text protocol, and keeps the desktop's math (FFT, RMS, peaks,
 DVB1 format) bit-for-bit compatible.
 
-**Live demo:** the deployed app autoplays a synthetic stream — no hardware needed.
+**Live demo:** [sentoxo.github.io/vibro-web](https://sentoxo.github.io/vibro-web/) — the deployed app
+autoplays a synthetic stream, no hardware needed.
 
 ## Features
 
