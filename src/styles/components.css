@@ -525,6 +525,295 @@
   overflow-y: auto;
 }
 
+.esc-mode-switch {
+  display: flex;
+  gap: 6px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+}
+
+.esc-mode-switch .btn {
+  flex: 1;
+  border-color: transparent;
+}
+
+.esc-mode-switch .btn-accent {
+  border-color: var(--accent);
+}
+
+/* === FETtec OneWire panel === */
+.fettec-steps {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex-wrap: wrap;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.fettec-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.fettec-step-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.fettec-step-active {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.fettec-step-active .fettec-step-index {
+  background: var(--accent);
+  color: var(--surface-1);
+}
+
+.fettec-step-done {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 55%, var(--border));
+}
+
+.fettec-step-done .fettec-step-index {
+  background: color-mix(in srgb, var(--ok) 30%, var(--surface-3));
+  color: var(--ok);
+}
+
+.fettec-paused {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--warning) 10%, var(--surface-1));
+  color: var(--warning);
+  font-size: 12px;
+}
+
+.fettec-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.fettec-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.fettec-table th,
+.fettec-table td {
+  padding: 4px 6px;
+  text-align: right;
+  border-bottom: 1px solid var(--border);
+}
+
+.fettec-table th {
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.fettec-table th:nth-child(-n + 4),
+.fettec-table td:nth-child(-n + 4) {
+  text-align: left;
+}
+
+.fettec-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.fettec-row-stale td {
+  color: var(--text-dim);
+}
+
+.fettec-serial {
+  max-width: 92px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fettec-missing {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.fettec-verdict {
+  display: inline-block;
+  margin-left: 3px;
+  padding: 0 4px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.fettec-verdict-onewire {
+  color: var(--ok);
+}
+
+.fettec-verdict-fc-pin {
+  color: var(--warning);
+}
+
+.fettec-verdict-no-onewire {
+  color: var(--danger);
+}
+
+.fettec-verdict-unknown {
+  color: var(--text-dim);
+}
+
+.fettec-motors {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fettec-motor {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fettec-motor-label {
+  width: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.fettec-slider {
+  flex: 1;
+  min-width: 40px;
+  accent-color: var(--accent);
+}
+
+.fettec-motor-input {
+  width: 58px;
+  padding: 3px 6px;
+  font-size: 11px;
+}
+
+.fettec-motor-rpm {
+  width: 64px;
+  text-align: right;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.fettec-apply {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fettec-apply .field-row {
+  flex: 1;
+}
+
+.fettec-apply .input {
+  width: 64px;
+}
+
+.fettec-crosscheck {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.fettec-summary {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fettec-summary-ok {
+  color: var(--ok);
+}
+
+.fettec-summary-warn {
+  color: var(--warning);
+}
+
+.fettec-verdicts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+}
+
+.fettec-msp-check {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.fettec-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.fettec-settings-note {
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+.fettec-cli-input {
+  width: 100%;
+  max-width: 190px;
+  font-size: 10.5px;
+}
+
+.fettec-scale-details {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.fettec-scale-details summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  margin: 4px 0;
+}
+
+.fettec-scale-details .field-row {
+  margin: 4px 0;
+}
+
 /* === Modals === */
 .modal-backdrop {
   position: fixed;

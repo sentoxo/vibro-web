@@ -8,6 +8,18 @@ import {
   DEFAULT_LSB_PER_G,
   ESC_DEFAULT_CHANNEL,
   ESC_MAX_CHANNELS,
+  FETTEC_BAUD_CHOICES,
+  FETTEC_DEFAULT_CHECK_POWER,
+  FETTEC_DEFAULT_ESC_BAUD,
+  FETTEC_DEFAULT_ESC_COUNT,
+  FETTEC_DEFAULT_ID_BASE,
+  FETTEC_DEFAULT_POLES,
+  FETTEC_MAX_ESCS,
+  FETTEC_MAX_ID_BASE,
+  FETTEC_MAX_POLES,
+  FETTEC_MIN_ID_BASE,
+  FETTEC_MIN_POLES,
+  FETTEC_RPM_SOURCE_MEAN,
   FFT_MAX_FREQ_CHOICES,
   IMU_HZ_CHOICES,
   LSB_PER_G_CHOICES,
@@ -16,6 +28,7 @@ import {
   WINDOW_SECONDS,
   ZOOM_WINDOW_SECONDS,
 } from "../core/constants";
+import { DEFAULT_TLM_SCALES } from "../core/fettec/protocol";
 import type { Settings } from "../core/types";
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -28,6 +41,19 @@ export const DEFAULT_SETTINGS: Settings = {
   saveMode: "download",
   escMotorChannel: ESC_DEFAULT_CHANNEL,
   autoplayDemo: true,
+  fettecEscCount: FETTEC_DEFAULT_ESC_COUNT,
+  fettecIdBase: FETTEC_DEFAULT_ID_BASE,
+  fettecPoles: FETTEC_DEFAULT_POLES,
+  fettecEscBaud: FETTEC_DEFAULT_ESC_BAUD,
+  fettecCliLine: "",
+  fettecAutoReboot: true,
+  fettecCheckPower: FETTEC_DEFAULT_CHECK_POWER,
+  fettecRpmMotor: FETTEC_RPM_SOURCE_MEAN,
+  fettecScaleTemp: DEFAULT_TLM_SCALES.temp,
+  fettecScaleVoltage: DEFAULT_TLM_SCALES.voltage,
+  fettecScaleCurrent: DEFAULT_TLM_SCALES.current,
+  fettecScaleErpm: DEFAULT_TLM_SCALES.erpm,
+  fettecScaleConsumption: DEFAULT_TLM_SCALES.consumption,
 };
 
 const REFRESH_MIN = 0.5;
@@ -46,6 +72,26 @@ export function fftMaxChoicesFor(_imuHz: number): number[] {
 
 function numberIn(value: unknown, choices: readonly number[], fallback: number): number {
   return typeof value === "number" && choices.includes(value) ? value : fallback;
+}
+
+function intIn(value: unknown, min: number, max: number, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(value)));
+}
+
+function scaleIn(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  if (value <= 0 || value > 1e6) return fallback;
+  return value;
+}
+
+function cliLineIn(value: unknown): string {
+  if (typeof value !== "string") return "";
+  // One CLI line only: strip CR/LF/control chars and cap the length.
+  return value
+    .replace(/[\r\n\u0000-\u001f\u007f]/g, " ")
+    .trim()
+    .slice(0, 200);
 }
 
 /** Sanitize arbitrary stored data into a valid Settings object. */
@@ -72,6 +118,19 @@ export function validateSettings(raw: unknown): Settings {
         ? Math.trunc(source.escMotorChannel)
         : ESC_DEFAULT_CHANNEL,
     autoplayDemo: typeof source.autoplayDemo === "boolean" ? source.autoplayDemo : true,
+    fettecEscCount: intIn(source.fettecEscCount, 1, FETTEC_MAX_ESCS, FETTEC_DEFAULT_ESC_COUNT),
+    fettecIdBase: intIn(source.fettecIdBase, FETTEC_MIN_ID_BASE, FETTEC_MAX_ID_BASE, FETTEC_DEFAULT_ID_BASE),
+    fettecPoles: intIn(source.fettecPoles, FETTEC_MIN_POLES, FETTEC_MAX_POLES, FETTEC_DEFAULT_POLES),
+    fettecEscBaud: numberIn(source.fettecEscBaud, FETTEC_BAUD_CHOICES, FETTEC_DEFAULT_ESC_BAUD),
+    fettecCliLine: cliLineIn(source.fettecCliLine),
+    fettecAutoReboot: typeof source.fettecAutoReboot === "boolean" ? source.fettecAutoReboot : true,
+    fettecCheckPower: intIn(source.fettecCheckPower, 1, 50, FETTEC_DEFAULT_CHECK_POWER),
+    fettecRpmMotor: intIn(source.fettecRpmMotor, 0, FETTEC_MAX_ESCS, FETTEC_RPM_SOURCE_MEAN),
+    fettecScaleTemp: scaleIn(source.fettecScaleTemp, DEFAULT_TLM_SCALES.temp),
+    fettecScaleVoltage: scaleIn(source.fettecScaleVoltage, DEFAULT_TLM_SCALES.voltage),
+    fettecScaleCurrent: scaleIn(source.fettecScaleCurrent, DEFAULT_TLM_SCALES.current),
+    fettecScaleErpm: scaleIn(source.fettecScaleErpm, DEFAULT_TLM_SCALES.erpm),
+    fettecScaleConsumption: scaleIn(source.fettecScaleConsumption, DEFAULT_TLM_SCALES.consumption),
   };
   // fftMaxHz is independent of imuHz (desktop parity): accept any listed choice.
   settings.fftMaxHz = numberIn(source.fftMaxHz, FFT_MAX_FREQ_CHOICES, DEFAULT_FFT_MAX_FREQ);

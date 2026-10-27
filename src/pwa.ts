@@ -1,4 +1,4 @@
-// Service-worker registration with an update prompt (plan §6.16).
+// Service-worker registration with an update prompt (plan §6.17).
 
 import { signal } from "@preact/signals";
 import { registerSW } from "virtual:pwa-register";

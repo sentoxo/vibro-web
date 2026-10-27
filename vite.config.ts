@@ -5,7 +5,7 @@ import { VitePWA } from "vite-plugin-pwa";
 // GitHub Pages project sites live under /<repo>/. Set VITE_BASE=/<repo>/ at
 // build time; local development and root deployments use "/".
 const base = process.env.VITE_BASE ?? "/";
-const version = process.env.npm_package_version ?? "0.1.0";
+const version = process.env.npm_package_version ?? "0.1.1-dev";
 const buildHash = process.env.VITE_BUILD_HASH ?? "dev";
 
 export default defineConfig({

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  analogRequestPacket,
   encodeMspPacket,
   MspParser,
+  parseAnalog,
   parseMotorTelemetry,
   setMotorPacket,
   telemetryRequestPacket,
@@ -30,6 +32,10 @@ describe("encoding", () => {
 
   it("telemetry request is `$M< 00 8B 8B` (size 0, cmd 139, ck 0x8B)", () => {
     expect([...telemetryRequestPacket()]).toEqual([0x24, 0x4d, 0x3c, 0x00, 0x8b, 0x8b]);
+  });
+
+  it("analog request is `$M< 00 6E 6E` (size 0, cmd 110, ck 0x6E)", () => {
+    expect([...analogRequestPacket()]).toEqual([0x24, 0x4d, 0x3c, 0x00, 0x6e, 0x6e]);
   });
 
   it("encodeMspPacket rejects oversize payloads", () => {
@@ -121,5 +127,33 @@ describe("parseMotorTelemetry", () => {
     const extended = new Uint8Array(payload.length + 7);
     extended.set(payload, 0);
     expect(parseMotorTelemetry(extended, 1)?.rpm).toBe(5000);
+  });
+});
+
+describe("parseAnalog (MSP_ANALOG 110)", () => {
+  function analogPayload(voltage: number, mah: number, rssi: number, current: number): Uint8Array {
+    const payload = new Uint8Array(6);
+    payload[0] = voltage;
+    const view = new DataView(payload.buffer);
+    view.setUint16(1, mah, true);
+    payload[3] = rssi;
+    view.setUint16(4, current, true);
+    return payload;
+  }
+
+  it("decodes voltage (0.1 V), mAh, RSSI and current (0.01 A)", () => {
+    expect(parseAnalog(analogPayload(168, 1234, 80, 2150))).toEqual({
+      voltage: 16.8,
+      mah: 1234,
+      rssi: 80,
+      current: 21.5,
+    });
+  });
+
+  it("rejects short payloads and tolerates trailing bytes", () => {
+    expect(parseAnalog(new Uint8Array(5))).toBeNull();
+    const extended = new Uint8Array(9);
+    extended.set(analogPayload(100, 10, 1, 100), 0);
+    expect(parseAnalog(extended)?.voltage).toBe(10);
   });
 });

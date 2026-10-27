@@ -15,6 +15,8 @@ import {
   SNAPSHOT_SECONDS,
   ZOOM_WINDOW_SECONDS,
 } from "../core/constants";
+import type { FettecBusStats, FettecCheckSummary, FettecDevice, FettecTelemetry } from "../core/fettec/types";
+import type { MspAnalog } from "../core/msp";
 import { findPeaks } from "../core/peaks";
 import { RingBuffer } from "../core/ring-buffer";
 import { meanOf, RmsHistory, rmsZeroCentered, vectorRms } from "../core/stats";
@@ -60,6 +62,8 @@ export interface FftFrame {
   mode: "live" | "file";
 }
 
+export type EscMode = "msp" | "fettec";
+
 export interface EscStateSignal {
   connected: boolean;
   running: boolean;
@@ -70,6 +74,20 @@ export interface EscStateSignal {
   warningAcknowledged: boolean;
   diagnostic: string;
   error: string | null;
+  /** Which ESC path owns the FC port. MSP and passthrough are exclusive. */
+  mode: EscMode;
+  // FETtec OneWire state (empty in MSP mode).
+  devices: FettecDevice[];
+  telemetry: FettecTelemetry[];
+  /** Per-motor commanded percentages (0-based). */
+  targets: number[];
+  busStats: FettecBusStats;
+  check: FettecCheckSummary | null;
+  checkRunning: boolean;
+  /** Last MSP_ANALOG snapshot (captured while MSP mode was live). */
+  mspAnalog: MspAnalog | null;
+  /** True after a background-tab/port watchdog stopped the FETtec link. */
+  paused: boolean;
 }
 
 const EMPTY_DIAGNOSTICS: Diagnostics = {
@@ -116,6 +134,25 @@ class Store {
     warningAcknowledged: false,
     diagnostic: "FC not connected",
     error: null,
+    mode: "msp",
+    devices: [],
+    telemetry: [],
+    targets: [],
+    busStats: {
+      state: "idle",
+      framesSent: 0,
+      replies: 0,
+      crcErrors: 0,
+      timeouts: 0,
+      loopHz: 0,
+      rxBytesPerSecond: 0,
+      message: "Not connected",
+      updatedAt: 0,
+    },
+    check: null,
+    checkRunning: false,
+    mspAnalog: null,
+    paused: false,
   });
   readonly spark = signal<number[]>([]);
   readonly paused = signal(false);
@@ -712,7 +749,13 @@ class Store {
   }
 
   get motorRpmHz(): number {
-    return this.esc.peek().rpm / 60;
+    const esc = this.esc.peek();
+    if (esc.mode !== "fettec") return esc.rpm / 60;
+    const source = this.settings.peek().fettecRpmMotor;
+    if (source > 0) return (esc.telemetry[source - 1]?.rpm ?? 0) / 60;
+    const rpms = esc.telemetry.map((entry) => entry.rpm).filter((rpm): rpm is number => rpm !== null);
+    if (rpms.length === 0) return 0;
+    return rpms.reduce((sum, rpm) => sum + rpm, 0) / rpms.length / 60;
   }
 
   // === Lifecycle ===

@@ -1,4 +1,4 @@
-// "New version available — Reload" prompt (plan §6.16).
+// "New version available — Reload" prompt (plan §6.17).
 
 import { updateAvailable, applyUpdate, dismissUpdate } from "../pwa";
 

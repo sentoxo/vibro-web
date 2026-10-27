@@ -46,6 +46,7 @@ The web app is designed for:
 | D16 | PWA | Installable, offline app shell, update prompt |
 | D17 | Language | English only |
 | D18 | Hardware available | CH340 vibration sensor; no ESP32; no FC/ESC hardware |
+| D19 | FETtec ESC path | Continuous OneWire frames + auto-stop on blur/port loss; the MSP path keeps `ESC_HEARTBEAT_HZ = 0` (supersedes D13 for FETtec only) |
 
 ### Why a static web app works
 
@@ -347,7 +348,7 @@ At 921600 baud, 8N1, the theoretical payload ceiling is about **92 KB/s**. A lin
 │                                                   │  Export                │
 │                                                   │  ESC control (locked)  │
 ├───────────────────────────────────────────────────┴─────────────────────────┤
-│ packets 12,430 · lost 0 · malformed 0 · wire 65% · render 3.1 ms · v0.1.0  │
+│ packets 12,430 · lost 0 · malformed 0 · wire 65% · render 3.1 ms · v0.1.1-dev │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1041,7 +1042,62 @@ Because v1 follows desktop behavior, motor commands are only sent on start/power
 - “Reset settings” action in Advanced.
 - No cookies, no analytics, no third-party requests.
 
-### 6.16 PWA
+### 6.16 FETtec ESC over Betaflight passthrough
+
+Full implementation plan: [`PLAN-FETTEC.md`](./PLAN-FETTEC.md). Oracle: the FETtec
+configurator JS and ArduPilot `AP_FETtecOneWire`; `../vibro/fettec_ctl.py` is **not** an
+oracle (it is a defective prototype and stays untouched).
+
+**Mode switch** — the ESC panel has a segmented `MSP` / `FETtec passthrough` switch. Both
+use the same FC port and are mutually exclusive: in passthrough the VCP is a raw OneWire
+pipe, so MSP is dead. Switching tears the active session down. The FETtec panel is
+lazy-loaded so the entry bundle is unaffected.
+
+**Protocol core** (`src/core/fettec/protocol.ts`) — frame
+`[src, id, typeLo, typeHi, length, msg, payload…, crc8]`, CRC-8 poly **0x07** (not the
+0xD5 used by DVB-S2), `length` = whole frame, reply sources `0x02` bootloader /
+`0x03` firmware. Config reply payloads carry no message-id prefix. Fast throttle is one
+frame: `ceil((12 + 11·N)/8)` bytes before the CRC (N=8 → 14 bytes with CRC), byte 0 =
+`0x80 | (slot<<4) | ((v0>>10)&1)<<3 | 0x01`, byte 1 =
+`((v0>>7)&7)<<5 | ALL_ID`, then the 11-bit MSB-first values, CRC last. Fast telemetry is
+2 big-endian bytes per ESC per requested slot: 0 temp, 1 voltage, 2 current, 3 ERPM×100,
+4 consumption mAh, 5–7 debug; `rpm = erpm·2/poles`.
+
+**Bus session** (`src/core/fettec/bus.ts`, `src/state/fettec-session.ts`) — open the VCP
+at 115200 → `#` → CLI banner → `serialpassthrough esc_sensor 2000000 rxtx reset\n` →
+~1.5 s settle → scan IDs `base..base+N-1` (`OK`; bootloader → `BL_START_FW` retry) →
+read type / SW version / SN → `SET_TLM_TYPE 0` (fast slots) and
+`SET_FAST_COM_LENGTH <len> <minId> <count>` (fast-slot mode is the configurator default;
+a missing `SET_TLM_TYPE` ack is tolerated) → ~100 Hz lockstep loop, one persistent writer,
+round-robin TLM slot, CRC-validated `extractFrames` for config replies and exact-echo +
+`count·2` byte parsing for fast telemetry. Disconnect sends zeros, drops DTR (reboots the
+FC out of passthrough) and closes. Write error, port loss or a hidden tab zeroes the
+motors and pauses; the ESC failsafe (250 ms of silence) is the last line of defence.
+
+**Controller** (`src/core/fettec/controller.ts`) — 8 independent motor percentages,
+absolute 11-bit values (`1000 + pct·10`, 0..100 % only, dead band 991–1009),
+START/STOP with 5 % per 50 ms ramps, `emergencyStop()` immediate. Kept separate from the
+MSP parity path (`src/core/esc.ts`).
+
+**Signal check** (`src/core/fettec/signalCheck.ts`) — props-off gate, default 10 %:
+500 ms zero-throttle baseline, then one motor at a time ~400 ms pulse. Verdicts:
+**FETTEC OneWire input** (ERPM/current follow bus throttle), **FC pin signal (PWM/DShot)**
+(answers on the bus but ignores bus throttle — inferred, because BF holds motor pins high
+during passthrough), **not on the OneWire bus** (no telemetry). An MSP V/A snapshot taken
+before passthrough is shown alongside ESC V/A for scale verification.
+
+**UI** — `FettecPanel`: step badges, connect/disconnect, device table (model, FW, SN, TLM
+age, temp/V/A/RPM/mAh), bus stats, signal-check table, 8 sliders + numeric inputs, apply
+to all, START, big STOP, emergency stop, paused banner, shared `SafetyDialog`. Settings
+drawer gains a FETtec section (bus baud 115200/500000/2000000, ESC count 1–8, ID base,
+poles, CLI-line override, check power, RPM source motor, auto-reboot, telemetry scale
+overrides), persisted and clamped; structural fields are disabled while connected.
+
+**Safety** — D19: unlike the MSP path, FETtec requires continuous frames (the ESC stops
+after 250 ms of silence). Frames run for the whole session; STOP is always reachable;
+disconnect/blur/port loss stops the motors. Props-off warning is mandatory before START.
+
+### 6.17 PWA
 
 - `vite-plugin-pwa`, `registerType: "prompt"`.
 - Precache: HTML, JS, CSS, SVG/PNG icons, manifest.

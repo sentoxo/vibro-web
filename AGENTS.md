@@ -19,19 +19,25 @@ doubt about behavior, read:
 | MSP telemetry record rules | `vibro/esc_telemetry.py` |
 
 `com_log.py`, `seq_analyzer.py`, `test.py`, `fettec_ctl.py` in the desktop repo are standalone
-dev CLI tools — out of app scope.
+dev CLI tools — out of app scope. For **FETtec OneWire** the oracle is *not* the desktop:
+read the FETtec configurator (`gui.fettec.net/js/ESC/onewire.js`, `js/ESC/protocol/bf_pt.js`,
+`js/common/OW_commands.js`, `ESC/main.js`) and ArduPilot `libraries/AP_FETtecOneWire`.
+`vibro/fettec_ctl.py` is a defective prototype — see [FETtec gotchas](#fettec-gotchas).
 
 ## Layout
 
 ```
 src/core/        pure logic: parser, fft (radix-2 + Bluestein), peaks, stats, dvb1, msp, esc,
-                 naming, units, rate-meter, ring-buffer, settings, constants, types
+                 naming, units, rate-meter, ring-buffer, settings, constants, types;
+                 fettec/ = OneWire protocol, controller, signal check, bus session
 src/workers/     fft.worker.ts (spectrum off-thread), + sources/dvb1.worker.ts (parse off-thread)
-src/sources/     demo.ts, serial.ts (Web Serial sensor), file.ts (FileSource), source.ts
-src/state/       store.ts (central orchestration), settings.ts, exporter.ts, toasts.ts
+src/sources/     demo.ts, serial.ts (Web Serial sensor), file.ts (FileSource), fettec-serial.ts
+src/state/       store.ts (central orchestration), settings.ts, exporter.ts, toasts.ts,
+                 fettec-session.ts (store ↔ bus ↔ controller)
 src/charts/      chart.ts (uPlot factory), export-png.ts
-src/components/  Preact components (Header, Landing, ChartGrid, SettingsDrawer, EscPanel, …)
-tests/unit/      vitest node project (parser/fft/golden/stats/peaks/dvb1/msp/esc/naming/units/…)
+src/components/  Preact components (Header, Landing, ChartGrid, SettingsDrawer, EscPanel,
+                 MspEscPanel, FettecPanel (lazy), SafetyDialog, …)
+tests/unit/      vitest node project (parser/fft/golden/stats/peaks/dvb1/msp/esc/fettec/…)
 tests/dom/       vitest jsdom project (settings persistence)
 tests/e2e/       Playwright specs (+ support/fake-serial.ts mock)
 tests/fixtures/  test_data.bin (6×6400@3200 DVB1 container), golden.json, py_dvb1_*.bin
@@ -75,6 +81,17 @@ scripts/         gen_golden.py (fixture regeneration), validate_export.py (byte-
   921600 is line coding, not the transport ceiling.
 - **ESC**: throttle `1000 + power*10` with Python `int(round())` banker's rounding; stop ramp
   5 % per 50 ms step (allowed from idle when FC connected); commands only on start/change/stop.
+- **FETtec ESC** (separate from the MSP path, `src/core/fettec/`): OneWire config frames
+  `[src, id, typeLo, typeHi, length, msg, payload…, crc8]` with CRC-8 poly **0x07**; reply
+  sources `0x02` bootloader / `0x03` firmware; reply payloads have **no message-id prefix**.
+  Fast throttle is one frame of `ceil((12+11N)/8)` bytes *before* the CRC (N=8 → 13 + CRC =
+  14 bytes total), byte 0 `0x80|(slot<<4)|((v0>>10)&1)<<3|0x01`, byte 1
+  `((v0>>7)&7)<<5|0x1F`, then 11-bit MSB-first values, CRC last. Fast telemetry = 2
+  big-endian bytes per ESC per requested slot (0 temp signed, 1 V, 2 A signed, 3 ERPM×100,
+  4 mAh, 5–7 debug); `rpm = erpm*2/poles`. Continuous ~100 Hz frames are mandatory (250 ms
+  failsafe); per-motor values are 0..100 % and ramps are 5 %/50 ms, `emergencyStop()` is
+  immediate. Passthrough is
+  entered with `serialpassthrough esc_sensor 2000000 rxtx reset` and left by dropping DTR.
 - **MSP v1**: `$M<`/`$M>` size cmd payload xor (xor over size+cmd+payload); telemetry record
   check is `len >= offset + 4` (desktop loose rule), records are 13 bytes.
 - **Files/naming**: `{base}{index:02d}_{power}` with `_02` collision suffixes; demo burst
@@ -86,6 +103,8 @@ scripts/         gen_golden.py (fixture regeneration), validate_export.py (byte-
 - D9 → peaks are top-3 raw bins (no min amplitude / separation).
 - D10 → time x-axis is `0..windowSeconds`, not `-win..0`.
 - D14 → handshake is `call all` → 3 s → `start stream` (no heartbeat; the current desktop has none).
+- D13 → superseded for the **FETtec path only** (D19): continuous OneWire frames + auto-stop on
+  blur/port loss/250 ms failsafe. The MSP path keeps `ESC_HEARTBEAT_HZ = 0` and desktop behavior.
 - DVB1 header is 32 bytes without sensitivity/filter fields (PLAN described an older 40-byte layout);
   the "resync maxSamples" rule is gone — files are multi-burst containers.
 - Desktop CPU stat → web render-ms/FPS readout; desktop updater → PWA update prompt.
@@ -135,7 +154,8 @@ E2E downloads `tests/.artifacts/exported.bin` during the file-mode spec; the CI 
     case) → the test retries START until `esc.running` flips.
 - **Arch Linux hosts**: `npx playwright install chromium` only (no `--with-deps`; sudo fails);
   system libraries are already present on the dev machine.
-- `ESC_HEARTBEAT_HZ = 0` is dead/documentation; `fftMaxChoicesFor(_imuHz)` returns all choices for
+- `ESC_HEARTBEAT_HZ = 0` is dead/documentation for the **MSP path only** (desktop parity); the
+  FETtec path always runs continuous frames. `fftMaxChoicesFor(_imuHz)` returns all choices for
   API compatibility. The measurement readout is `formatDataRate` (KB/s), never a baud percentage.
 - **Fake serial reconnect**: the mock port recreates its streams on `open()` and is nullable when
   closed (real `SerialPort.readable`/`writable` are null after close). `simulateSensorLoss()`
@@ -146,6 +166,59 @@ E2E downloads `tests/.artifacts/exported.bin` during the file-mode spec; the CI 
 - **Session epochs**: `SerialSource` binds each read loop/timer to an `epoch`; `stop()` and every
   connect bump it. Don't move cross-session state (parser, seq tracker, stats patches) outside
   that guard — a stale callback resurrecting `lostPackets` was the phantom-warning bug.
+
+## FETtec gotchas
+
+The OneWire protocol has almost nothing in common with MSP. These cost real debugging time.
+
+- **The prototype is not an oracle.** `../vibro/fettec_ctl.py` computes a negative pad in
+  `pack_fast_throttle` for N ≥ 3 (crashes 8-motor rigs), defaults the ESC bus to 115200 instead
+  of 2 Mbit, decodes ArduPilot 11-byte telemetry instead of fast-slot telemetry, and its CLI line
+  lacks `rxtx`/`reset`. Keep it untouched; use the configurator + ArduPilot instead.
+- **CRC is poly 0x07, not 0xD5.** The configurator's `update_crc8` and ArduPilot's
+  `crc8_dvb_update(..., 0x7)` agree; 0xD5 belongs to DVB-S2. `crc8Dvb` exists only as a
+  back-compat alias for the plan's original name.
+- **Fast-throttle byte 0** is `0x80 | (slot<<4) | ((v0>>10)&1)<<3 | 0x01`: the telemetry slot is
+  bits 4..6, and `0x80` is required. `unpackFastThrottle` starts ESC 1 at **bit 23** (byte 2 bit 0);
+  a bit-offset-18 unpacker silently shifts every value.
+- **`SET_FAST_COM_LENGTH` carries the full frame length including CRC**
+  (`ceil((12+11N)/8)+1`; N=8 → 14, N=2 → 6, N=1 → 4). The command length before the CRC is one
+  less. Sending the command length makes the ESC wait for a byte that never comes.
+- **Config reply payloads have no message-id prefix**: REQ_TYPE → 1 type byte, REQ_SW_VER →
+  version+subversion, REQ_SN → 12 serial bytes, OK/SET_* ack → one `0` byte.
+- **Half-duplex echo.** Our own frames come back. `extractFrames` only accepts sources 0x02/0x03
+  with a valid CRC (so echo/noise/truncation are skipped by construction). Fast telemetry has no
+  CRC: wait for the exact echo of the written frame, then read `count*2` bytes — never byte-count
+  blindly.
+- **Telemetry mode.** Fast-slot mode (`SET_TLM_TYPE 0`, 2 bytes/ESC/slot) is the configurator
+  default. It is sent explicitly but a timeout/NOT_OK is tolerated (not every firmware acks it).
+  Then `SET_FAST_COM_LENGTH` must be acknowledged.
+- **Leaving passthrough needs a DTR drop.** Betaflight never exits on its own; the CLI line ends
+  in `reset`, and `port.setSignals({ dataTerminalReady: false })` reboots the FC. Zero the motors
+  ×3 first. The fake port records DTR transitions in `fettecSignals()`.
+- **BF holds the motor pins high in passthrough.** An ESC fed from the FC pins still answers
+  telemetry but ignores bus throttle; the signal check's "FC pin signal" verdict is *inferred*,
+  never a direct PWM measurement. ESCs that never answer are "not on the OneWire bus".
+- **One persistent writer.** The bus keeps a single writer for the whole session; taking a fresh
+  `getWriter()` per write races and drops frames (the same failure the MSP panel fixed with a
+  serialized write queue).
+- **Signal check must start before setMotor.** `runSignalCheck` calls `io.start()` first; a stop
+  ramp wins over `setMotor`, so the old order suppressed every test pulse and every ESC looked
+  like an FC-pin ESC.
+- **Settings are captured at connect.** Count, ID base, poles and bus baud are read once by
+  `fettecSession.connect`; the drawer disables those structural fields while connected and they
+  take effect on reconnect.
+- **Hidden tab / port loss = stop.** `visibilitychange`, write errors and disconnects zero the
+  motors, pause the loop and show a banner. Background timers are throttled, so the ESC's 250 ms
+  failsafe is the backstop, never the primary guard.
+- **Lazy panel.** `FettecPanel` is `lazy()` + `Suspense` from `EscPanel`; keep FETtec modules out
+  of the entry import graph or the 150 kB gzip cap breaks.
+- **Fake serial**: the FETtec port is the third kind (`sensor` → `fc` → `fettec`;
+  `setNextPort("fettec")` forces it), uses default (non-bytes) streams, echoes the fast-throttle
+  frame plus a 16-byte TLM block, models per-motor RPM/current, and ESC index 4 ignores bus
+  throttle (the fc-pin case). `fettecFrames()` / `fettecSignals()` expose captures.
+- **Playwright names**: `getByRole(..., { name: "Connect FETtec" })` also matches "Disconnect
+  FETtec" (substring, case-insensitive) — pass `{ exact: true }`.
 
 ## Definition of done (any feature change)
 

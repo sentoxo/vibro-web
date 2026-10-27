@@ -3,7 +3,7 @@
 // Response: $M> <size> <cmd> <payload...> <xor>
 // XOR covers size, cmd and payload only.
 
-import { MSP_MOTOR_TELEMETRY, MSP_SET_MOTOR, MOTOR_RECORD_SIZE } from "./constants";
+import { MSP_ANALOG, MSP_MOTOR_TELEMETRY, MSP_SET_MOTOR, MOTOR_RECORD_SIZE } from "./constants";
 
 const PREAMBLE_OUT = [0x24, 0x4d, 0x3c]; // "$M<"
 const PREAMBLE_IN = [0x24, 0x4d, 0x3e]; // "$M>"
@@ -36,6 +36,34 @@ export function setMotorPacket(throttles: number[]): Uint8Array {
 /** MSP_MOTOR_TELEMETRY (139) request: `$M< 00 8B 8B`. */
 export function telemetryRequestPacket(): Uint8Array {
   return encodeMspPacket(MSP_MOTOR_TELEMETRY, new Uint8Array(0));
+}
+
+/** MSP_ANALOG (110) request: `$M< 00 6E 6E`. */
+export function analogRequestPacket(): Uint8Array {
+  return encodeMspPacket(MSP_ANALOG, new Uint8Array(0));
+}
+
+export interface MspAnalog {
+  voltage: number; // V (payload unit is 0.1 V)
+  current: number; // A (payload unit is 0.01 A)
+  mah: number; // mAh drawn
+  rssi: number; // 0..255
+}
+
+/**
+ * MSP_ANALOG (110) payload: u8 voltage (0.1 V), u16 LE mAh, u8 RSSI,
+ * u16 LE current (0.01 A) — six bytes in Betaflight. Extra trailing bytes are
+ * tolerated (future firmware), short payloads are rejected.
+ */
+export function parseAnalog(payload: Uint8Array): MspAnalog | null {
+  if (payload.length < 6) return null;
+  const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+  return {
+    voltage: payload[0] * 0.1,
+    mah: view.getUint16(1, true),
+    rssi: payload[3],
+    current: view.getUint16(4, true) * 0.01,
+  };
 }
 
 export interface MspResponse {

@@ -24,7 +24,10 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
                 : "Not supported in this browser — use Chrome or Edge. Demo and file mode work here."}
             </dd>
             <dt>Protocol</dt>
-            <dd>S&lt;sid&gt;,&lt;seq&gt;,&lt;x&gt;,&lt;y&gt;,&lt;z&gt; lines; DVB1 bursts; MSP v1 for FC/ESC.</dd>
+            <dd>
+              S&lt;sid&gt;,&lt;seq&gt;,&lt;x&gt;,&lt;y&gt;,&lt;z&gt; lines; DVB1 bursts; MSP v1 and FETtec OneWire
+              (Betaflight passthrough) for FC/ESC.
+            </dd>
             <dt>Bandwidth</dt>
             <dd>The text protocol fits ~2500 Hz at 921600 baud. 2000 Hz is the recommended maximum.</dd>
             <dt>Privacy</dt>

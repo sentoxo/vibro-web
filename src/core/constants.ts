@@ -90,6 +90,7 @@ export const DEMO_LANDING_START_MS = 400; // auto-demo delay after first paint
 // === MSP / ESC ===
 export const MSP_SET_MOTOR = 214;
 export const MSP_MOTOR_TELEMETRY = 139;
+export const MSP_ANALOG = 110;
 export const MOTOR_RECORD_SIZE = 13;
 export const TELEMETRY_POLL_MS = 100;
 export const ESC_MIN_THROTTLE = 1000;
@@ -100,6 +101,40 @@ export const ESC_DEFAULT_CHANNEL = 3; // desktop default RPM motor channel
 export const ESC_MAX_CHANNELS = 16;
 // Keep at 0 per D13; enabling it adds a heartbeat without restructuring.
 export const ESC_HEARTBEAT_HZ = 0;
+
+// === FETtec OneWire over Betaflight passthrough ===
+export const FETTEC_CLI_BAUD = 115200; // host/USB side; the FC VCP line coding
+export const FETTEC_BAUD_CHOICES = [115200, 500000, 2000000] as const;
+export const FETTEC_DEFAULT_ESC_BAUD = 2000000;
+export const FETTEC_DEFAULT_CLI_LINE = "serialpassthrough esc_sensor 2000000 rxtx reset";
+export const FETTEC_CLI_BANNER_TIMEOUT_MS = 1500;
+export const FETTEC_CLI_SETTLE_MS = 1500;
+export const FETTEC_MAX_ESCS = 8;
+export const FETTEC_DEFAULT_ESC_COUNT = 8;
+export const FETTEC_DEFAULT_ID_BASE = 1;
+export const FETTEC_MIN_ID_BASE = 1;
+export const FETTEC_MAX_ID_BASE = 24;
+export const FETTEC_DEFAULT_POLES = 12;
+export const FETTEC_MIN_POLES = 2;
+export const FETTEC_MAX_POLES = 64;
+export const FETTEC_LOOP_HZ = 100;
+export const FETTEC_LOOP_INTERVAL_MS = 1000 / FETTEC_LOOP_HZ;
+export const FETTEC_REPLY_TIMEOUT_MS = 20;
+export const FETTEC_CONFIG_TIMEOUT_MS = 120;
+export const FETTEC_CONFIG_RETRIES = 2;
+export const FETTEC_BOOTLOADER_SETTLE_MS = 200;
+export const FETTEC_TELEMETRY_PATCH_MS = 50;
+export const FETTEC_STATS_INTERVAL_MS = 500;
+export const FETTEC_TLM_STALE_MS = 1500;
+export const FETTEC_ZERO_FRAMES = 3;
+export const FETTEC_RX_MAX_BYTES = 4096;
+export const FETTEC_DEFAULT_CHECK_POWER = 10;
+export const FETTEC_CHECK_BASELINE_MS = 500;
+export const FETTEC_CHECK_PULSE_MS = 400;
+export const FETTEC_CHECK_SETTLE_MS = 300;
+export const FETTEC_CHECK_ERPM_THRESHOLD = 500; // centi-eRPM
+export const FETTEC_CHECK_AMPS_THRESHOLD = 0.3; // A
+export const FETTEC_RPM_SOURCE_MEAN = 0;
 
 // === Persistence ===
 export const SETTINGS_STORAGE_KEY = "vibro.settings.v1";

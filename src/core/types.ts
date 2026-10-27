@@ -23,6 +23,20 @@ export interface Settings {
   saveMode: "download" | "folder";
   escMotorChannel: number; // 1..16
   autoplayDemo: boolean;
+  // FETtec OneWire over Betaflight passthrough.
+  fettecEscCount: number; // 1..8
+  fettecIdBase: number; // first OneWire ID (1..24)
+  fettecPoles: number; // motor poles (2..64)
+  fettecEscBaud: number; // 115200 | 500000 | 2000000
+  fettecCliLine: string; // "" = generated from the baud rate
+  fettecAutoReboot: boolean; // drop DTR on disconnect (FC reboot)
+  fettecCheckPower: number; // % used by the signal check
+  fettecRpmMotor: number; // 0 = mean of all ESCs, 1..8 = one motor
+  fettecScaleTemp: number;
+  fettecScaleVoltage: number;
+  fettecScaleCurrent: number;
+  fettecScaleErpm: number;
+  fettecScaleConsumption: number;
 }
 
 export interface Burst {

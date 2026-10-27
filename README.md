@@ -20,8 +20,13 @@ autoplays a synthetic stream, no hardware needed.
 - **File mode**: open multi-burst `.bin` (DVB1 container) files, pick a burst, full-length true-N FFT
   (6400 samples = 0.5 Hz resolution via Bluestein chirp-z).
 - **Demo mode**: four synthetic bursts at 48/72/110/160 Hz, identical to the desktop demo.
-- **ESC / FC control**: second serial port at 115200 baud, MSP v1 (`SET_MOTOR` 214,
-  `MOTOR_TELEMETRY` 139), RPM readout, safety dialog, stop ramp — desktop parity.
+- **ESC / FC control**: second serial port at 115200 baud with two mutually exclusive modes.
+  **MSP v1** (`SET_MOTOR` 214, `MOTOR_TELEMETRY` 139) keeps desktop parity; **FETtec OneWire over
+  Betaflight passthrough** drives up to 8 ESCs with per-motor throttle, live temp/V/A/RPM/mAh
+  telemetry, continuous 100 Hz frames, 5 %/50 ms ramps, a big STOP, and a props-off **signal
+  check** that reports whether each motor is on the OneWire bus or fed from the FC pins. Both
+  modes share the props-off safety dialog. The FETtec path follows the configurator/ArduPilot
+  protocol but has not yet been verified on real ESCs.
 - **Export**: dashboard PNG + DVB1 snapshot; filenames follow the desktop `{base}{index:02d}_{power}`
   convention; byte-compatible with the Python recorder (np.rint ties-to-even quantization).
 - **Diagnostics**: packet rate, sequence loss, malformed lines, measured link rate in **KB/s**
@@ -33,7 +38,7 @@ autoplays a synthetic stream, no hardware needed.
 
 | Mode | Chrome / Edge | Firefox / Safari |
 | --- | --- | --- |
-| Live sensor + ESC | ✅ (Web Serial) | ❌ |
+| Live sensor + ESC (MSP / FETtec) | ✅ (Web Serial) | ❌ |
 | Demo, file analysis, export, PWA | ✅ | ✅ |
 
 ## Development
@@ -72,4 +77,5 @@ Static hosting of `dist/` (GitHub Pages via the included workflow). Set the base
 ## Documentation
 
 - [PLAN.md](./PLAN.md) — the approved architecture and decisions (protocol sections superseded where the desktop app has moved on).
+- [PLAN-FETTEC.md](./PLAN-FETTEC.md) — the FETtec OneWire / Betaflight passthrough implementation plan.
 - [AGENTS.md](./AGENTS.md) — contributor/agent guide: layout, parity rules, fixture regeneration, gotchas.
