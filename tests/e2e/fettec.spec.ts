@@ -109,6 +109,13 @@ test("FETtec passthrough: scan, signal check, per-motor ramp and DTR reboot", as
     )
     .toBe(true);
 
+  // Stat hero: the RPM readout in front of the RMS value (same source as the
+  // FFT marker lines) shows up once the ESCs spin.
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__store.motorRpmHz), { timeout: 10_000 })
+    .toBeGreaterThan(0);
+  await expect(page.locator(".stat-rpm")).toContainText("rpm");
+
   // STOP ramps all motors back to the 1000 stop value.
   await page.getByRole("button", { name: "STOP", exact: true }).click();
   await expect

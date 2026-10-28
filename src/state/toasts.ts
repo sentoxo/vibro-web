@@ -2,6 +2,7 @@
 // lost-packets modal.
 
 import { signal } from "@preact/signals";
+import { logDebug } from "./debugLog";
 
 export type ToastKind = "info" | "success" | "warn" | "error";
 
@@ -25,6 +26,8 @@ export function pushToast(toast: Omit<Toast, "id" | "ttlMs"> & { ttlMs?: number 
   if (toast.dedupeKey && toasts.peek().some((t) => t.dedupeKey === toast.dedupeKey)) {
     return; // already visible; do not spam
   }
+  const level = toast.kind === "success" ? "info" : toast.kind;
+  logDebug("toast", level, `${toast.title}: ${toast.message ?? ""}`.trim());
   const entry: Toast = { ...toast, id: nextId++, ttlMs };
   toasts.value = [...toasts.peek(), entry];
   if (ttlMs > 0) setTimeout(() => dismissToast(entry.id), ttlMs);

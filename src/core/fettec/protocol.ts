@@ -291,7 +291,9 @@ export interface FastTelemetryReading {
 /**
  * Decode one fast-telemetry reply: `count` big-endian u16 values in ESC-ID
  * order, all carrying the same slot. Slot 0 (temperature) and slot 2 (current)
- * are signed; `rpm` is mechanical RPM = erpm × 2 / poles.
+ * are signed; the eRPM slot carries eRPM/100 (the configurator's own scale is
+ * 100). Mechanical RPM follows ArduPilot: eRPM "must be divided by number of
+ * motor poles" → rpm = erpm / poles (eRPM = poles × mechanical RPM).
  */
 export function decodeFastTelemetry(
   bytes: Uint8Array,
@@ -334,7 +336,7 @@ export function decodeFastTelemetry(
         break;
       case 3:
         reading.erpm = raw * scales.erpm;
-        reading.rpm = (reading.erpm * 2) / safePoles;
+        reading.rpm = reading.erpm / safePoles;
         break;
       case 4:
         reading.mah = raw * scales.consumption;
@@ -348,6 +350,42 @@ export function decodeFastTelemetry(
     out.push(reading);
   }
   return out;
+}
+
+// === ESC self-diagnosis frames (configurator convention) ===
+//
+// A FETtec ESC that has nothing to report on a slot sends measurements; when
+// it *has* a problem it overloads the slots with a diagnostic frame:
+//   consumption = 7357 (marker), current = problem code, and the voltage /
+// debug slots carry auxiliary codes (e.g. FW/HW type ids for code 3000).
+// `ToolProcessLoop()` in the configurator checks TLMValues[4]==7357 and pops
+// a "Problem on OneWire ID x" warning — it never shows the raw numbers.
+
+/** Consumption-slot raw value that marks a diagnostic frame. */
+export const TLM_DIAGNOSTIC_MARKER = 7357;
+
+export interface FettecProblemInfo {
+  code: number;
+  message: string;
+}
+
+/** Decode a diagnostic problem code (the current-slot raw of a 7357 frame). */
+export function fettecProblemInfo(code: number): FettecProblemInfo {
+  switch (code) {
+    case 1000:
+      return { code, message: "Failure on LOW-side FETs / gate driver" };
+    case 2000:
+      return { code, message: "No motor detected (or HIGH-side FETs / gate driver failure)" };
+    case 3000:
+      return { code, message: "Firmware mismatch to hardware" };
+    default:
+      return { code, message: `ESC self-diagnosis reported (code ${code})` };
+  }
+}
+
+/** True when the consumption slot of a telemetry frame carries the marker. */
+export function isFettecDiagnostic(mahRaw: number): boolean {
+  return mahRaw === TLM_DIAGNOSTIC_MARKER;
 }
 
 // === Device type names (subset of the configurator's DEVICE_types) ===
@@ -458,33 +496,44 @@ export interface FastReply {
   telemetry: Uint8Array | null;
   /** Bytes that were not consumed. */
   leftover: Uint8Array;
-  /** The echoed frame was not found in a reasonable window; caller should resync. */
-  desync: boolean;
+  /** True when the telemetry was taken without a byte-identical echo. */
+  fallback: boolean;
 }
 
 /**
  * Half-duplex fast-throttle reply: the host's own frame is echoed back, then
- * the ESCs append `count*2` telemetry bytes. Find the echo (CRC-validated by
- * the fact that it is our exact frame), then take the telemetry block.
+ * the ESCs append `count*2` telemetry bytes. Find the echo (the fact that it
+ * is our exact frame is the validation), then take the telemetry block.
+ *
+ * When the echo is present in full but not byte-identical, fall back to the
+ * configurator/ArduPilot convention: skip exactly the sent frame's byte count
+ * *without validating it* and parse the rest. Real 4in1 rigs bit-flip echo
+ * bytes under the 2 Mbit half-duplex turnaround (field log: byte 3 FA→F8,
+ * byte 0 0x91→0x81 slot-bit flip, 0x91→0x11 bit-7 flip), so validating byte
+ * 0's 0x80 | slot<<4 marker here would reject exactly the frames the bus
+ * corrupts most — the field's "timeouts == frames" failure. The loop clears
+ * its buffer every cycle, so a full-length buffer *is* the reply.
  */
 export function consumeFastReply(buffer: Uint8Array, echo: Uint8Array, count: number): FastReply {
   const tlmBytes = count * 2;
   const at = indexOfBytes(buffer, echo);
   if (at < 0) {
-    // Keep waiting; if the buffer keeps growing without an echo, drop one byte
-    // so a corrupt/missing echo cannot wedge the parser forever.
-    if (buffer.length > echo.length + tlmBytes + 64) {
-      return { telemetry: null, leftover: buffer.slice(1), desync: true };
+    if (buffer.length >= echo.length + tlmBytes) {
+      return {
+        telemetry: buffer.slice(echo.length, echo.length + tlmBytes),
+        leftover: buffer.slice(echo.length + tlmBytes),
+        fallback: true,
+      };
     }
-    return { telemetry: null, leftover: buffer, desync: false };
+    return { telemetry: null, leftover: buffer, fallback: false };
   }
   const start = at + echo.length;
   if (buffer.length < start + tlmBytes) {
-    return { telemetry: null, leftover: buffer, desync: false };
+    return { telemetry: null, leftover: buffer, fallback: false };
   }
   return {
     telemetry: buffer.slice(start, start + tlmBytes),
     leftover: buffer.slice(start + tlmBytes),
-    desync: false,
+    fallback: false,
   };
 }

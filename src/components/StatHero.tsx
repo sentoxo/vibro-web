@@ -21,9 +21,19 @@ export function StatHero() {
   const rms = store.rms.value;
   const spark = store.spark.value;
   const staticMode = store.staticMode.value;
+  const esc = store.esc.value;
+  // Motor RPM in front of the RMS number (same source as the FFT 1×/2× marker
+  // lines: MSP motor channel, or the FETtec RPM source setting).
+  const rpm = Math.round(store.motorRpmHz * 60);
   return (
     <section class="stat-hero" aria-label="Vibration statistics">
       <div class="stat-primary">
+        {esc.connected && rpm > 0 && (
+          <span class="stat-rpm tabular" title="Motor RPM (FFT marker source)">
+            {rpm}
+            <span class="stat-rpm-unit">rpm</span>
+          </span>
+        )}
         <span class="stat-value tabular">{formatFixed(rms.current, 2)}</span>
         <span class="stat-unit">m/s²</span>
         <span class="stat-caption">{staticMode ? "Burst RMS" : "RMS vibration"}</span>

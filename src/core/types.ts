@@ -28,6 +28,7 @@ export interface Settings {
   fettecIdBase: number; // first OneWire ID (1..24)
   fettecPoles: number; // motor poles (2..64)
   fettecEscBaud: number; // 115200 | 500000 | 2000000
+  fettecReplyTimeoutMs: number; // fast-telemetry reply window (raise for slow USB/VCP FCs)
   fettecCliLine: string; // "" = generated from the baud rate
   fettecAutoReboot: boolean; // drop DTR on disconnect (FC reboot)
   fettecCheckPower: number; // % used by the signal check

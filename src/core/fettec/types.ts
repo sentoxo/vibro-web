@@ -18,6 +18,14 @@ export interface FettecDevice {
   serial: string;
   /** Per-ESC setup error (bootloader stuck, missing ack, …). */
   error: string | null;
+  /**
+   * Firmware self-diagnosis (configurator convention: consumption slot raw
+   * 7357 marks a problem, the current slot carries the problem code). Shown
+   * instead of the diagnostic numbers, which encode the fault, not measurements.
+   */
+  problem: string | null;
+  /** Raw problem code (1000/2000/3000) that `problem` was decoded from. */
+  problemCode: number | null;
   /** performance.now() of the last fast-telemetry update, or null. */
   lastTelemetryMs: number | null;
 }
@@ -29,7 +37,10 @@ export interface FettecTelemetry {
   amps: number | null;
   /** Electrical RPM (raw × scale). */
   erpm: number | null;
-  /** Mechanical RPM = erpm × 2 / poles. */
+  /**
+   * Mechanical RPM. ArduPilot: the eRPM slot carries eRPM/100 and "must be
+   * divided by number of motor poles" → rpm = erpm / poles.
+   */
   rpm: number | null;
   mah: number | null;
   /** Debug slots 5..7 (last received value each). */
@@ -45,6 +56,12 @@ export interface FettecBusStats {
   replies: number;
   crcErrors: number;
   timeouts: number;
+  /** Replies parsed by prefix-skip because the ESC echo was not byte-identical. */
+  echoFallbacks: number;
+  /** Diagnostic capture of the last timed-out / echo-fallback reply window
+   * (byte count, first-byte latency, hex) — distinguishes "echo corrupted"
+   * from "USB VCP latency exceeds the reply timeout". */
+  rxDebug: string;
   /** Measured loop rate over the last stats window. */
   loopHz: number;
   /** Measured bus throughput (RX bytes/s). */

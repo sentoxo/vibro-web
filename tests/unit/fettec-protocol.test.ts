@@ -10,12 +10,15 @@ import {
   fastThrottleCommandLen,
   fastThrottleLen,
   fettecDeviceName,
+  fettecProblemInfo,
   frameMessage,
   framePayload,
+  isFettecDiagnostic,
   MSG,
   packFastThrottle,
   SRC_BOOTLOADER,
   SRC_ESC,
+  TLM_DIAGNOSTIC_MARKER,
   unpackFastThrottle,
 } from "../../src/core/fettec/protocol";
 
@@ -146,7 +149,8 @@ describe("fast telemetry", () => {
 
     const erpm = decodeFastTelemetry(bytes([0x01, 0x00]), 1, 3, DEFAULT_TLM_SCALES, 14);
     expect(erpm[0].erpm).toBe(25600);
-    expect(erpm[0].rpm).toBeCloseTo((25600 * 2) / 14, 6);
+    // ArduPilot: eRPM (raw × 100) divided by poles (×2 was the doubled-RPM bug).
+    expect(erpm[0].rpm).toBeCloseTo(25600 / 14, 6);
 
     const mah = decodeFastTelemetry(bytes([0x00, 0xc8]), 1, 4);
     expect(mah[0].mah).toBe(200);
@@ -180,20 +184,63 @@ describe("consumeFastReply", () => {
     const result = consumeFastReply(buffer, echo, 2);
     expect(result.telemetry).toEqual(telemetry);
     expect(result.leftover).toEqual(bytes([0xbb]));
-    expect(result.desync).toBe(false);
+    expect(result.fallback).toBe(false);
   });
 
   it("waits for the telemetry block when the reply is split", () => {
     const result = consumeFastReply(bytes([...echo, 0x00, 0x10]), echo, 2);
     expect(result.telemetry).toBeNull();
-    expect(result.desync).toBe(false);
+    expect(result.fallback).toBe(false);
   });
 
-  it("drops a byte when no echo appears in a growing buffer", () => {
-    const result = consumeFastReply(new Uint8Array(echo.length + 4 + 65), echo, 2);
-    expect(result.telemetry).toBeNull();
-    expect(result.desync).toBe(true);
-    expect(result.leftover.length).toBe(echo.length + 4 + 64);
+  it("prefix-skips a full-length echo that is not byte-identical (real-hardware ESC echo)", () => {
+    // Field capture: byte 3 flips FA→F8 under the 2 Mbit half-duplex
+    // turnaround; exact match fails, the configurator/ArduPilot convention
+    // (skip sentLen, parse the rest) recovers every frame.
+    const corrupt = bytes([...echo, ...telemetry]);
+    corrupt[3] ^= 0x02;
+    const result = consumeFastReply(corrupt, echo, 2);
+    expect(result.telemetry).toEqual(telemetry);
+    expect(result.fallback).toBe(true);
+  });
+
+  it("prefix-skips even when echo byte 0 flips its slot bit or the 0x80 marker", () => {
+    // The field log's remaining timeouts: expected 0x91 echoed as 0x81
+    // (slot bit) and 0x11 (bit 7). Validating byte 0 rejects exactly the
+    // corrupted frames, so the fallback is length-gated only.
+    for (const flip of [0x10, 0x80]) {
+      const corrupt = bytes([...echo, ...telemetry]);
+      corrupt[0] ^= flip;
+      const result = consumeFastReply(corrupt, echo, 2);
+      expect(result.telemetry).toEqual(telemetry);
+      expect(result.fallback).toBe(true);
+    }
+  });
+});
+
+describe("ESC self-diagnosis (7357 frames)", () => {
+  it("recognizes the configurator's consumption marker", () => {
+    expect(TLM_DIAGNOSTIC_MARKER).toBe(7357);
+    expect(isFettecDiagnostic(7357)).toBe(true);
+    expect(isFettecDiagnostic(200)).toBe(false);
+  });
+
+  it("decodes the problem codes the configurator warns about", () => {
+    expect(fettecProblemInfo(1000).message).toMatch(/LOW-side FETs/);
+    expect(fettecProblemInfo(2000).message).toMatch(/No motor detected/);
+    expect(fettecProblemInfo(3000).message).toMatch(/Firmware mismatch/);
+    expect(fettecProblemInfo(4242)).toEqual({ code: 4242, message: "ESC self-diagnosis reported (code 4242)" });
+  });
+
+  it("the 'no motor' diagnostic frame is exactly the numbers users see as noise", () => {
+    // Slots of an idle 4in1 channel (the user's "8.47 V, 20 A, 7357 mAh"):
+    const voltage = decodeFastTelemetry(bytes([0x03, 0x4f]), 1, 1); // 847 → 8.47 "V"
+    const current = decodeFastTelemetry(bytes([0x07, 0xd0]), 1, 2); // 2000 → 20 "A"
+    const mah = decodeFastTelemetry(bytes([0x1c, 0xbd]), 1, 4); // 7357 → marker
+    expect(voltage[0].volt).toBeCloseTo(8.47, 2);
+    expect(current[0].amps).toBeCloseTo(20, 2);
+    expect(isFettecDiagnostic(mah[0].raw)).toBe(true);
+    expect(fettecProblemInfo(current[0].raw).message).toMatch(/No motor detected/);
   });
 });
 

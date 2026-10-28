@@ -21,6 +21,8 @@ export interface SignalSample {
   erpm: number | null;
   amps: number | null;
   lastTelemetryMs: number | null;
+  /** ESC self-diagnosis message (configurator 7357 frame), if any. */
+  problem?: string | null;
 }
 
 export interface SignalCheckThresholds {
@@ -56,6 +58,17 @@ export function classifySignalCheck(
     };
   }
 
+  // A self-diagnosing ESC reports problem *codes* in the current slot (e.g.
+  // 2000 = no motor → "20 A"), not a real current draw. The bus-throttle test
+  // is meaningless for it, so report the fault verbatim instead of guessing.
+  const problem = pulse.problem ?? baseline.problem ?? null;
+  if (problem !== null) {
+    return {
+      verdict: "unknown",
+      note: `ESC self-diagnosis: ${problem.toLowerCase()}.`,
+    };
+  }
+
   const erpmDelta =
     pulse.erpm !== null && baseline.erpm !== null ? pulse.erpm - baseline.erpm : pulse.erpm !== null ? pulse.erpm : 0;
   const ampsDelta =
@@ -77,7 +90,10 @@ export function summarizeSignalCheck(results: FettecCheckResult[]): FettecCheckS
   const onewire = results.filter((result) => result.verdict === "onewire").length;
   const fcPin = results.filter((result) => result.verdict === "fc-pin").length;
   const missing = results.filter((result) => result.verdict === "no-onewire").length;
-  const unknown = results.filter((result) => result.verdict === "unknown").length;
+  const selfDiagnosis = results.filter(
+    (result) => result.verdict === "unknown" && result.note.startsWith("ESC self-diagnosis"),
+  ).length;
+  const unknown = results.filter((result) => result.verdict === "unknown").length - selfDiagnosis;
 
   let summary: string;
   if (results.length === 0) {
@@ -91,6 +107,7 @@ export function summarizeSignalCheck(results: FettecCheckResult[]): FettecCheckS
   } else {
     const parts = [`${onewire} on OneWire`, `${fcPin} on FC pins (inferred)`];
     if (missing > 0) parts.push(`${missing} not on the bus`);
+    if (selfDiagnosis > 0) parts.push(`${selfDiagnosis} ESC self-diagnosis`);
     if (unknown > 0) parts.push(`${unknown} unknown`);
     summary = `Mixed wiring: ${parts.join(", ")}.`;
   }
@@ -123,14 +140,16 @@ async function sampleAverage(io: SignalCheckIo, index: number, samples = 3, inte
   const erpm: (number | null)[] = [];
   const amps: (number | null)[] = [];
   let last: number | null = null;
+  let problem: string | null = null;
   for (let i = 0; i < samples; i++) {
     if (i > 0) await io.wait(intervalMs);
     const sample = io.read(index);
     erpm.push(sample.erpm);
     amps.push(sample.amps);
     if (sample.lastTelemetryMs !== null) last = sample.lastTelemetryMs;
+    if (sample.problem) problem = sample.problem;
   }
-  return { erpm: average(erpm), amps: average(amps), lastTelemetryMs: last };
+  return { erpm: average(erpm), amps: average(amps), lastTelemetryMs: last, problem };
 }
 
 /**

@@ -52,6 +52,17 @@ describe("classifySignalCheck", () => {
     expect(classified.note).toContain("inferred");
   });
 
+  it("reports the ESC self-diagnosis instead of trusting its problem codes", () => {
+    // A no-motor channel reports code 2000 (→ bogus 20 A); the pulse must not
+    // be read as a current spike that would fake an "onewire" verdict.
+    const baseline: SignalSample = { erpm: 0, amps: 20, lastTelemetryMs: NOW, problem: "No motor detected" };
+    const pulse: SignalSample = { erpm: 0, amps: 20, lastTelemetryMs: NOW, problem: "No motor detected" };
+    const classified = classifySignalCheck(baseline, pulse, NOW);
+    expect(classified.verdict).toBe("unknown");
+    expect(classified.note).toMatch(/self-diagnosis/i);
+    expect(classified.note).toMatch(/no motor detected/);
+  });
+
   it("uses the pulse value alone when no baseline exists", () => {
     expect(classifySignalCheck(sample(null, null), sample(1000, 0), NOW).verdict).toBe("onewire");
     expect(classifySignalCheck(sample(null, null), sample(0, 0), NOW).verdict).toBe("fc-pin");

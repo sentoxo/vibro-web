@@ -19,6 +19,7 @@ import {
 } from "../core/msp";
 import { requestNewPort } from "../sources/serial";
 import { store } from "../state/store";
+import { logDebug } from "../state/debugLog";
 import { pushToast } from "../state/toasts";
 import { SafetyDialog } from "./SafetyDialog";
 
@@ -38,6 +39,7 @@ export function MspEscPanel() {
   const writeQueue = useRef<Promise<unknown>>(Promise.resolve());
 
   const log = (message: string, level: "INFO" | "OK" | "ERROR" = "INFO") => {
+    logDebug("esc", level === "ERROR" ? "error" : "info", message);
     store.patchEsc({ diagnostic: `[FC] ${level}: ${message}` });
   };
 
@@ -185,7 +187,7 @@ export function MspEscPanel() {
     }
     const ok = escRef.current.start();
     store.patchEsc({ running: ok, power: escRef.current.power });
-    log(ok ? "ESC start command accepted." : "ESC start failed.", ok ? "OK" : "ERROR");
+    log(ok ? `ESC start command accepted (power ${escRef.current.power}%).` : "ESC start failed.", ok ? "OK" : "ERROR");
   };
 
   const stopMotors = () => {

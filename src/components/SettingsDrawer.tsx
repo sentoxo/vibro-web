@@ -8,6 +8,8 @@ import {
   FETTEC_MAX_POLES,
   FETTEC_MIN_ID_BASE,
   FETTEC_MIN_POLES,
+  FETTEC_REPLY_TIMEOUT_MAX_MS,
+  FETTEC_REPLY_TIMEOUT_MIN_MS,
   FFT_MAX_FREQ_CHOICES,
   IMU_HZ_CHOICES,
   LSB_PER_G_CHOICES,
@@ -211,6 +213,22 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
             value={settings.fettecPoles}
             disabled={fettecLive}
             onInput={(event) => store.patchSettings({ fettecPoles: Number((event.target as HTMLInputElement).value) })}
+          />
+        </label>
+        <label class="field-row">
+          <span>Reply timeout</span>
+          <input
+            class="input"
+            type="number"
+            min={FETTEC_REPLY_TIMEOUT_MIN_MS}
+            max={FETTEC_REPLY_TIMEOUT_MAX_MS}
+            step={5}
+            value={settings.fettecReplyTimeoutMs}
+            disabled={fettecLive}
+            title="Fast-telemetry reply window in ms. The FC's USB CDC data arrives in ~16 ms polls; a reply split across two polls lands at ~32 ms. Raise it (40–60) when stats show timeouts with a partial byte count (e.g. '8 B rx +16 ms' = echo arrived, telemetry did not)."
+            onInput={(event) =>
+              store.patchSettings({ fettecReplyTimeoutMs: Number((event.target as HTMLInputElement).value) })
+            }
           />
         </label>
         <label class="field-row">

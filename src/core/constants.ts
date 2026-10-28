@@ -119,7 +119,15 @@ export const FETTEC_MIN_POLES = 2;
 export const FETTEC_MAX_POLES = 64;
 export const FETTEC_LOOP_HZ = 100;
 export const FETTEC_LOOP_INTERVAL_MS = 1000 / FETTEC_LOOP_HZ;
-export const FETTEC_REPLY_TIMEOUT_MS = 20;
+// Fast-telemetry reply window. Linux polls the FC's USB CDC interface on
+// 16 ms frames; a reply split across two polls lands at ~32 ms, so a 20 ms
+// window sits exactly on the boundary and clips those replies (field log:
+// timeouts with "8 B rx +16 ms" = complete echo, telemetry in the next poll).
+// 40 ms covers two polls plus jitter; the rare truly-lost frame just costs
+// the loop one 40 ms beat (the 250 ms ESC failsafe stays far away).
+export const FETTEC_REPLY_TIMEOUT_MS = 40;
+export const FETTEC_REPLY_TIMEOUT_MIN_MS = 5;
+export const FETTEC_REPLY_TIMEOUT_MAX_MS = 250;
 export const FETTEC_CONFIG_TIMEOUT_MS = 120;
 export const FETTEC_CONFIG_RETRIES = 2;
 export const FETTEC_BOOTLOADER_SETTLE_MS = 200;

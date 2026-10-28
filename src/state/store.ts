@@ -37,6 +37,7 @@ import { SerialSource, serialSupported, type SerialSourceHandlers } from "../sou
 import type { DataSource, SourceHandlers } from "../sources/source";
 import { FftClient } from "../workers/fft-client";
 import { loadSettings, saveSettings, validateSettings } from "./settings";
+import { logInfo, logWarn } from "./debugLog";
 import { pushToast } from "./toasts";
 
 export interface TimeFrame {
@@ -144,6 +145,8 @@ class Store {
       replies: 0,
       crcErrors: 0,
       timeouts: 0,
+      echoFallbacks: 0,
+      rxDebug: "",
       loopHz: 0,
       rxBytesPerSecond: 0,
       message: "Not connected",
@@ -281,11 +284,13 @@ class Store {
     });
     this.source = demo;
     this.startRenderLoop();
+    logInfo("demo", `demo stream started${seed != null ? ` (seed ${seed})` : ""}`);
     await demo.start();
   }
 
   async showDemoBursts(): Promise<void> {
     await this.stopCurrentSource();
+    logInfo("demo", "static demo bursts loaded");
     this.clearData(true);
     this.sourceKind.value = "demo";
     this.staticMode.value = true;
@@ -318,6 +323,7 @@ class Store {
         });
       }
       this.selectBurst(0);
+      logInfo("file", `opened ${file.name} (${file.size} B): ${loaded.bursts.length} bursts, ${loaded.skipped} skipped`);
       return loaded;
     } finally {
       this.busy.value = false;
@@ -336,6 +342,7 @@ class Store {
     this.paused.value = false;
     // A new session must not inherit the previous session's loss warning.
     this.lostPacketWarning.value = false;
+    logInfo("serial", "connecting sensor port (new session: counters reset, seq re-baselined)");
     this.clearData(true);
     this.source = this.serialSource;
     this.startRenderLoop();
@@ -343,6 +350,7 @@ class Store {
   }
 
   async disconnectSerial(): Promise<void> {
+    logInfo("serial", "disconnect requested");
     await this.serialSource.stop();
     this.stopRenderLoop();
     this.source = null;
@@ -364,6 +372,10 @@ class Store {
   }
 
   private applyStatus(status: SourceStatus): void {
+    const previous = this.connection.peek();
+    if (previous !== status.state) {
+      logInfo("serial", `connection: ${previous} → ${status.state}${status.message ? ` (${status.message})` : ""}`);
+    }
     this.connection.value = status.state;
     if (status.deviceLabel) this.deviceLabel.value = status.deviceLabel;
     this.sourceMessage.value = status.message;
@@ -687,6 +699,7 @@ class Store {
   private notifyPacketLoss(): void {
     if (this.lossToastShown) return;
     this.lossToastShown = true;
+    logWarn("serial", "packet loss: sequence gap detected (loss modal armed)");
     // Desktop shows a modal popup once per session and keeps running.
     this.lostPacketWarning.value = true;
   }
@@ -751,9 +764,18 @@ class Store {
   get motorRpmHz(): number {
     const esc = this.esc.peek();
     if (esc.mode !== "fettec") return esc.rpm / 60;
+    // A self-diagnosing channel (no motor) has no real eRPM measurement (0 or
+    // coded values), so it must not dilute the mean — with one 4450 rpm motor
+    // on a 4-channel 4in1 the mean divided the marker frequency by 4
+    // (4450/4/60 = 18.5 Hz lines instead of 74 Hz).
+    const healthy = (index: number) => esc.devices.find((device) => device.index === index)?.problem == null;
     const source = this.settings.peek().fettecRpmMotor;
-    if (source > 0) return (esc.telemetry[source - 1]?.rpm ?? 0) / 60;
-    const rpms = esc.telemetry.map((entry) => entry.rpm).filter((rpm): rpm is number => rpm !== null);
+    if (source > 0) {
+      return (healthy(source - 1) ? (esc.telemetry[source - 1]?.rpm ?? 0) : 0) / 60;
+    }
+    const rpms = esc.telemetry
+      .map((entry) => (healthy(entry.escIndex) ? entry.rpm : null))
+      .filter((rpm): rpm is number => rpm !== null);
     if (rpms.length === 0) return 0;
     return rpms.reduce((sum, rpm) => sum + rpm, 0) / rpms.length / 60;
   }

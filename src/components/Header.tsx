@@ -1,6 +1,7 @@
 // Sticky header: brand, source badge, quick stats, connect, settings, help.
 
 import { store } from "../state/store";
+import { debugLogCount, downloadDebugLog } from "../state/debugLog";
 import { Brand } from "./Brand";
 import { formatInt } from "../core/units";
 
@@ -86,6 +87,25 @@ export function Header({
           aria-hidden="true"
         >
           <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+        </svg>
+      </button>
+      <button
+        class="btn btn-icon"
+        aria-label="Download debug log"
+        title={`Download the app debug log (${debugLogCount.value} events): sessions, ESC bus lines, warnings`}
+        onClick={() => downloadDebugLog()}
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.5"
+          aria-hidden="true"
+        >
+          <path d="M12 3v12m0 0 4-4m-4 4-4-4" />
+          <path d="M4 21h16" />
         </svg>
       </button>
       <button

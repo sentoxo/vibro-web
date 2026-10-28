@@ -17,10 +17,16 @@ import { DEFAULT_TLM_SCALES, type FettecTelemetryScales } from "../core/fettec/p
 import { runSignalCheck, type SignalSample } from "../core/fettec/signalCheck";
 import type { FettecCheckSummary, FettecTelemetry } from "../core/fettec/types";
 import { SerialFettecTransport } from "../sources/fettec-serial";
+import { logDebug, logError, logInfo, logWarn } from "./debugLog";
 import { store } from "./store";
 import { pushToast } from "./toasts";
 
 const CONTROL_SYNC_MS = 50;
+
+/** Bus log lines carrying fault vocabulary are logged at warn level. */
+function busLineLevel(line: string): "info" | "warn" {
+  return /timeout|error|fail|problem|emergency|stop|no ack|not present/i.test(line) ? "warn" : "info";
+}
 
 function sameValues(a: number[], b: number[]): boolean {
   if (a.length !== b.length) return false;
@@ -60,17 +66,11 @@ class FettecSession {
   private lastControlSync = 0;
   private connecting = false;
 
-  private readonly onVisibilityChange = () => {
-    if (typeof document === "undefined" || document.visibilityState !== "hidden") return;
-    if (!this.bus || !store.esc.peek().connected) return;
-    void this.emergencyStop("Background tab: the ESCs were stopped (250 ms OneWire failsafe).");
-  };
-
-  constructor() {
-    if (typeof document !== "undefined") {
-      document.addEventListener("visibilitychange", this.onVisibilityChange);
-    }
-  }
+  // No visibilitychange stop (user decision): switching browser tabs must not
+  // force-stop the motors. Background timers are throttled, so while the tab
+  // is hidden the ESC's 250 ms hardware failsafe spins the motors down, and
+  // the loop's targets resume driving them when the tab is shown again.
+  // Port loss and write errors still trigger a real emergency stop.
 
   get isConnected(): boolean {
     return this.bus !== null && store.esc.peek().connected;
@@ -89,6 +89,11 @@ class FettecSession {
     this.controller = controller;
     this.latestTelemetry = Array.from({ length: count }, (_, index) => emptyTelemetry(index));
     this.connecting = true;
+    logInfo(
+      "fettec",
+      `connect requested: count=${count}, idBase=${settings.fettecIdBase}, poles=${settings.fettecPoles}, ` +
+        `baud=${settings.fettecEscBaud}, replyTimeout=${settings.fettecReplyTimeoutMs} ms`,
+    );
 
     store.patchEsc({
       mode: "fettec",
@@ -114,6 +119,7 @@ class FettecSession {
       poles: settings.fettecPoles || FETTEC_DEFAULT_POLES,
       scales: scalesFromSettings(),
       autoReboot: settings.fettecAutoReboot,
+      replyTimeoutMs: settings.fettecReplyTimeoutMs,
       getRawValues: (now) => {
         controller.tick(now);
         this.syncControl(now);
@@ -136,8 +142,12 @@ class FettecSession {
         this.syncControl(performance.now(), true);
       },
       onStats: (busStats) => store.patchEsc({ busStats }),
-      onLog: (line) => store.patchEsc({ diagnostic: `[FETtec] ${line}` }),
+      onLog: (line) => {
+        logDebug("fettec", busLineLevel(line), line);
+        store.patchEsc({ diagnostic: `[FETtec] ${line}` });
+      },
       onEmergency: (reason) => {
+        logWarn("fettec", `emergency stop: ${reason}`);
         this.controller?.emergencyStop();
         store.patchEsc({
           connected: false,
@@ -156,11 +166,13 @@ class FettecSession {
     try {
       await bus.connect();
       store.patchEsc({ connected: true, error: null, paused: false });
+      logInfo("fettec", "bus ready: fast-throttle loop running");
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.bus = null;
       this.controller = null;
+      logError("fettec", `connect failed: ${message}`);
       store.patchEsc({ connected: false, error: message, diagnostic: message });
       pushToast({ kind: "error", title: "FETtec", message });
       return false;
@@ -171,6 +183,7 @@ class FettecSession {
 
   async disconnect(): Promise<void> {
     const bus = this.bus;
+    logInfo("fettec", "disconnect requested (zero frames, DTR drop)");
     this.bus = null;
     this.controller = null;
     this.latestTelemetry = [];
@@ -194,6 +207,7 @@ class FettecSession {
     const controller = this.controller;
     if (!controller || !this.isConnected) return false;
     const ok = controller.start();
+    if (ok) logInfo("fettec", `START: motors ramping (targets: ${controller.targetValues().join(", ")} %)`);
     this.syncControl(performance.now(), true);
     return ok;
   }
@@ -202,11 +216,13 @@ class FettecSession {
     const controller = this.controller;
     if (!controller) return false;
     const ok = controller.stop();
+    if (ok) logInfo("fettec", `STOP: ramping down from ${controller.currentPower}%`);
     this.syncControl(performance.now(), true);
     return ok;
   }
 
   emergencyStop(reason = "Manual emergency stop"): Promise<void> {
+    logWarn("fettec", `emergency stop: ${reason}`);
     this.controller?.emergencyStop();
     this.syncControl(performance.now(), true);
     return this.bus?.emergencyStop(reason) ?? Promise.resolve();
@@ -218,6 +234,7 @@ class FettecSession {
   }
 
   setAll(percent: number): void {
+    logInfo("fettec", `apply-to-all: ${percent}%`);
     this.controller?.setAll(percent);
     this.syncControl(performance.now(), true);
   }
@@ -247,6 +264,7 @@ class FettecSession {
         aborted: () => !this.isConnected,
       });
       store.patchEsc({ check: summary, checkRunning: false, diagnostic: summary.summary });
+      logInfo("fettec", `signal check: ${summary.summary}`);
       pushToast({ kind: summary.allOneWire ? "info" : "warn", title: "Signal check", message: summary.summary });
       return summary;
     } catch (error) {
@@ -262,18 +280,19 @@ class FettecSession {
   }
 
   destroy(): void {
-    if (typeof document !== "undefined") {
-      document.removeEventListener("visibilitychange", this.onVisibilityChange);
-    }
     void this.disconnect();
   }
 
   private sample(index: number): SignalSample {
     const entry = this.latestTelemetry[index];
+    // The ESC self-diagnosis lives on the device record; a self-diagnosing
+    // channel reports problem codes, not measurements (see classifySignalCheck).
+    const problem = store.esc.peek().devices[index]?.problem ?? null;
     return {
       erpm: entry?.erpm ?? null,
       amps: entry?.amps ?? null,
       lastTelemetryMs: entry?.lastTelemetryMs ?? null,
+      problem,
     };
   }
 

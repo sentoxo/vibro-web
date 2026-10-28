@@ -10,7 +10,10 @@
 //
 // Half-duplex: the host's own fast-throttle frame is echoed back before the
 // ESC telemetry. `consumeFastReply` finds the exact echo and takes `count*2`
-// telemetry bytes, so echo/noise never get parsed as data.
+// telemetry bytes; a full-length echo that is not byte-identical (real rigs
+// bit-flip echo bytes, byte 0 slot/0x80 bits included, under the 2 Mbit
+// half-duplex turnaround) is skipped by length, the configurator/ArduPilot
+// way, so a bit-flipped echo no longer means "timeouts == frames".
 
 import {
   FETTEC_BOOTLOADER_SETTLE_MS,
@@ -33,10 +36,12 @@ import {
   extractFrames,
   fastThrottleLen,
   fettecDeviceName,
+  fettecProblemInfo,
   MSG,
   packFastThrottle,
   SRC_BOOTLOADER,
   SRC_ESC,
+  TLM_DIAGNOSTIC_MARKER,
   TLM_TYPE_FAST_SLOTS,
   type FettecFrame,
   type FettecTelemetryScales,
@@ -64,6 +69,9 @@ export interface FettecBusOptions {
   poles: number;
   scales: FettecTelemetryScales;
   autoReboot: boolean;
+  /** Fast-reply window (write → complete telemetry block). Raise for FCs whose
+   * USB VCP forwarding is slow; default FETTEC_REPLY_TIMEOUT_MS. */
+  replyTimeoutMs?: number;
   /** Called once per fast-throttle frame; tick the ramp controller here. */
   getRawValues(nowMs: number): number[];
   onState(step: FettecStep, message: string): void;
@@ -80,6 +88,8 @@ const EMPTY_STATS: FettecBusStats = {
   replies: 0,
   crcErrors: 0,
   timeouts: 0,
+  echoFallbacks: 0,
+  rxDebug: "",
   loopHz: 0,
   rxBytesPerSecond: 0,
   message: "",
@@ -111,6 +121,8 @@ function emptyDevice(id: number, index: number): FettecDevice {
     firmware: "",
     serial: "",
     error: null,
+    problem: null,
+    problemCode: null,
     lastTelemetryMs: null,
   };
 }
@@ -135,7 +147,21 @@ export class FettecBus {
 
   private devices: FettecDevice[] = [];
   private telemetry: FettecTelemetry[] = [];
+  // Per-device raw slot values (8 slots) of the latest telemetry. A diagnostic
+  // frame is fully described by its raws: marker 7357 in slot 4 (consumption),
+  // problem code in slot 2 (current), auxiliary type ids in slots 5..6.
+  private deviceRaw: number[][] = [];
   private tlmSlot = 0;
+  // The fast-throttle/telemetry window is sized to the *present, contiguous*
+  // ESC range detected during scan, exactly like the configurator
+  // (`maxFT_DeviceId - minDeviceId + 1`), not the configured `count`. A 4in1 on
+  // IDs 1..4 with count=8 must send 4-ESC frames and read 4*2 telemetry bytes;
+  // asking for 8*2 bytes never fills and every frame times out (no RPM).
+  private fastIndexStart = 0; // first device index in the fast range (0-based)
+  private fastCount = 0; // number of ESCs the fast frame covers
+  private reportedProblems = new Set<string>();
+  /** Per-label throttle for the one-line reply-window captures. */
+  private replyDebugLogged = new Map<string, number>();
   private lastTelemetryEmit = 0;
   private step: FettecStep = "idle";
   private message = "";
@@ -180,10 +206,15 @@ export class FettecBus {
     this.loopRunning = false;
     this.rx = new Uint8Array(0);
     this.tlmSlot = 0;
+    this.fastIndexStart = 0;
+    this.fastCount = 0;
     this.devices = Array.from({ length: this.options.count }, (_, index) =>
       emptyDevice(this.options.idBase + index, index),
     );
     this.telemetry = Array.from({ length: this.options.count }, (_, index) => emptyTelemetry(index));
+    this.deviceRaw = Array.from({ length: this.options.count }, () => new Array<number>(8).fill(-1));
+    this.reportedProblems = new Set();
+    this.replyDebugLogged = new Map();
     this.stats = { ...EMPTY_STATS, state: "idle" };
     this.resetStatsWindow();
 
@@ -200,7 +231,6 @@ export class FettecBus {
 
       const cliLine = this.cliLine();
       this.setStep("passthrough", `CLI: ${cliLine}`);
-      this.options.onLog(`CLI: ${cliLine}`);
       await this.transport.write(new TextEncoder().encode(`${cliLine}\n`));
       await this.sleep(FETTEC_CLI_SETTLE_MS);
       if (epoch !== this.epoch) return;
@@ -209,6 +239,11 @@ export class FettecBus {
 
       this.setStep("scan", "Scanning OneWire IDs…");
       await this.scan(epoch);
+      if (epoch !== this.epoch) return;
+
+      // Size the fast-throttle frame and the telemetry reply window to the
+      // ESCs that are actually on the bus, not to the configured count.
+      this.prepareFastWindow();
       if (epoch !== this.epoch) return;
 
       this.setStep("init", "Configuring fast throttle and telemetry…");
@@ -364,10 +399,50 @@ export class FettecBus {
     }
   }
 
+  /**
+   * Compute the contiguous present ESC range and store it as the fast window.
+   * Mirrors the configurator's `minDeviceId` / `maxFT_DeviceId`: the fast
+   * throttle frame packs `(last - first + 1)` values starting at the lowest
+   * present ID, and the ESCs reply with that many ×2 telemetry bytes. Gaps
+   * inside the range are filled with stop values (1000) and warned about.
+   */
+  private prepareFastWindow(): void {
+    let first = -1;
+    let last = -1;
+    for (let index = 0; index < this.devices.length; index++) {
+      if (!this.devices[index].present) continue;
+      if (first < 0) first = index;
+      last = index;
+    }
+    this.fastIndexStart = first < 0 ? 0 : first;
+    this.fastCount = first < 0 ? 0 : last - first + 1;
+
+    const present = this.devices.filter((device) => device.present).length;
+    if (this.fastCount > present) {
+      const ids = this.devices
+        .filter((device) => device.present)
+        .map((device) => device.id)
+        .join(", ");
+      this.options.onLog(
+        `ID gap in the fast window (present IDs ${ids}): telemetry for gap slots is invalid — renumber the ESC IDs to a gapless run.`,
+      );
+    }
+    if (this.fastCount < this.options.count) {
+      this.options.onLog(
+        `Fast window: ${this.fastCount} ESC(s) from ID ${this.options.idBase + this.fastIndexStart} (configured count ${this.options.count}).`,
+      );
+    }
+  }
+
+  private fastIdBase(): number {
+    return this.options.idBase + this.fastIndexStart;
+  }
+
   private async init(epoch: number): Promise<void> {
     const present = this.devices.filter((device) => device.present);
     let configured = 0;
-    const fastLen = fastThrottleLen(this.options.count);
+    const fastLen = fastThrottleLen(this.fastCount);
+    const fastBase = this.fastIdBase();
 
     for (const device of present) {
       if (epoch !== this.epoch) return;
@@ -384,7 +459,7 @@ export class FettecBus {
       let ack: FettecFrame | null = null;
       for (let attempt = 0; attempt < FETTEC_CONFIG_RETRIES && !ack; attempt++) {
         ack = await this.request(
-          buildConfigFrame(device.id, MSG.SET_FAST_COM_LENGTH, [fastLen, this.options.idBase, this.options.count]),
+          buildConfigFrame(device.id, MSG.SET_FAST_COM_LENGTH, [fastLen, fastBase, this.fastCount]),
           device.id,
         );
       }
@@ -438,8 +513,7 @@ export class FettecBus {
         nextAt += FETTEC_LOOP_INTERVAL_MS;
         if (nextAt < now - FETTEC_LOOP_INTERVAL_MS * 2) nextAt = now + FETTEC_LOOP_INTERVAL_MS;
 
-        const raw = this.options.getRawValues(now).slice(0, this.options.count);
-        while (raw.length < this.options.count) raw.push(1000);
+        const raw = this.fastRawValues(now);
         const slot = this.tlmSlot;
         this.tlmSlot = (this.tlmSlot + 1) % 8;
         const packed = packFastThrottle(raw, slot);
@@ -447,25 +521,38 @@ export class FettecBus {
         // Lockstep like the configurator: clear the buffer, send, wait for the
         // echo + telemetry, then schedule the next frame.
         this.rx = new Uint8Array(0);
+        const writeAt = performance.now();
         await this.transport.write(packed.frame);
         if (epoch !== this.epoch || !this.loopRunning) return;
-        this.stats.framesSent += 1;
+        this.stats = { ...this.stats, framesSent: this.stats.framesSent + 1 };
         this.statsFramesWindow += 1;
 
-        const deadline = performance.now() + FETTEC_REPLY_TIMEOUT_MS;
-        let reply = consumeFastReply(this.rx, packed.frame, this.options.count);
+        const replyTimeout = this.options.replyTimeoutMs ?? FETTEC_REPLY_TIMEOUT_MS;
+        const deadline = performance.now() + replyTimeout;
+        // First-byte latency over the whole reply window: the one number that
+        // separates "echo bytes never arrive / differ" from "arrived too late".
+        let firstByteAt = 0;
+        let reply = consumeFastReply(this.rx, packed.frame, this.fastCount);
         while (!reply.telemetry && performance.now() < deadline && epoch === this.epoch) {
           await this.waitChunk(Math.min(5, deadline - performance.now()));
-          reply = consumeFastReply(this.rx, packed.frame, this.options.count);
+          if (this.rx.length > 0 && firstByteAt === 0) firstByteAt = performance.now();
+          reply = consumeFastReply(this.rx, packed.frame, this.fastCount);
         }
 
         if (reply.telemetry) {
+          const window = this.rx;
           this.rx = reply.leftover;
-          this.stats.replies += 1;
+          this.stats = {
+            ...this.stats,
+            replies: this.stats.replies + 1,
+            echoFallbacks: this.stats.echoFallbacks + (reply.fallback ? 1 : 0),
+          };
           this.statsRepliesWindow += 1;
+          if (reply.fallback) this.logReplyCapture("echo-miss", packed.frame, window, writeAt, firstByteAt);
           this.applyTelemetry(reply.telemetry, slot, now);
         } else {
-          this.stats.timeouts += 1;
+          this.stats = { ...this.stats, timeouts: this.stats.timeouts + 1 };
+          this.logReplyCapture("timeout", packed.frame, this.rx, writeAt, firstByteAt);
           // Drop a corrupt/stale buffer so it cannot wedge the parser.
           this.rx = new Uint8Array(0);
         }
@@ -480,16 +567,50 @@ export class FettecBus {
     }
   }
 
+  private fastRawValues(nowMs: number): number[] {
+    const all = this.options.getRawValues(nowMs);
+    const raw = new Array<number>(this.fastCount);
+    for (let slot = 0; slot < this.fastCount; slot++) {
+      const device = this.devices[this.fastIndexStart + slot];
+      raw[slot] = device && device.present ? (all[this.fastIndexStart + slot] ?? 1000) : 1000;
+    }
+    return raw;
+  }
+
+  /**
+   * One-line hex + latency capture of a reply window that needed a fallback
+   * or timed out. "N B rx +X ms" tells the two failure modes apart: a full
+   * byte count with a late "echo-miss" means the ESC echo is not byte-
+   * identical (prefix-skip recovers it); "0 B rx no data" means the FC's
+   * USB VCP forwarding is slower than the reply timeout — raise it in
+   * Settings.
+   */
+  private logReplyCapture(label: string, frame: Uint8Array, window: Uint8Array, writeAt: number, firstByteAt: number): void {
+    const latency = firstByteAt > 0 ? `+${Math.round(firstByteAt - writeAt)} ms` : "no data";
+    const capture = window.slice(0, 16);
+    const line =
+      `Fast reply ${label}: ${window.length} B rx ${latency}, ` +
+      `expected echo ${serialHex(frame.subarray(0, 4))}…, got ${serialHex(capture)}${window.length > capture.length ? "…" : ""}.`;
+    this.stats = { ...this.stats, rxDebug: line };
+    const count = label === "timeout" ? this.stats.timeouts : this.stats.echoFallbacks;
+    const seen = this.replyDebugLogged.get(label) ?? 0;
+    if (seen < 3 || count % 250 === 0) {
+      this.replyDebugLogged.set(label, seen + 1);
+      this.options.onLog(line);
+    }
+  }
+
   private applyTelemetry(bytes: Uint8Array, slot: number, nowMs: number): void {
     const readings = decodeFastTelemetry(
       bytes,
-      this.options.count,
+      this.fastCount,
       slot as 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7,
       this.options.scales,
       this.options.poles,
     );
     for (const reading of readings) {
-      const entry = this.telemetry[reading.escIndex];
+      const deviceIndex = this.fastIndexStart + reading.escIndex;
+      const entry = this.telemetry[deviceIndex];
       if (!entry) continue;
       switch (slot) {
         case 0:
@@ -515,8 +636,42 @@ export class FettecBus {
           break;
       }
       entry.lastTelemetryMs = nowMs;
-      const device = this.devices[reading.escIndex];
+      const device = this.devices[deviceIndex];
       if (device) device.lastTelemetryMs = nowMs;
+
+      // Configurator self-diagnosis: a consumption raw of 7357 marks a problem
+      // frame; the current-slot raw carries the problem code. Replace the
+      // meaningless diagnostic numbers with a clear message (7357 "mah", a
+      // 2000-code "20 A" and a coded voltage are not real measurements).
+      const raws = this.deviceRaw[deviceIndex];
+      if (raws) raws[slot] = reading.raw;
+      if (device && raws) {
+        const diagnostic = raws[4] === TLM_DIAGNOSTIC_MARKER;
+        if (diagnostic) {
+          const code = raws[2];
+          if (Number.isFinite(code)) {
+            const info = fettecProblemInfo(code);
+            device.problem = info.message;
+            device.problemCode = info.code;
+          }
+        } else if (device.problem !== null) {
+          device.problem = null;
+          device.problemCode = null;
+        }
+      }
+    }
+    this.emitProblems();
+  }
+
+  /** Surface newly-reported ESC self-diagnoses (configurator pops a warning). */
+  private emitProblems(): void {
+    for (const device of this.devices) {
+      if (!device.present || device.problem === null) continue;
+      const key = `${device.id}:${device.problemCode}`;
+      if (this.reportedProblems.has(key)) continue;
+      this.reportedProblems.add(key);
+      this.options.onLog(`ID ${device.id}: ${device.problem}.`);
+      this.emitDevices();
     }
   }
 
@@ -633,7 +788,8 @@ export class FettecBus {
   }
 
   private async sendZeroFrames(): Promise<void> {
-    const values = new Array<number>(this.options.count).fill(1000);
+    const count = this.fastCount > 0 ? this.fastCount : this.options.count;
+    const values = new Array<number>(count).fill(1000);
     for (let i = 0; i < FETTEC_ZERO_FRAMES; i++) {
       try {
         await this.transport.write(packFastThrottle(values, 0).frame);

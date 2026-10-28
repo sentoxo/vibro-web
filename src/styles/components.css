@@ -142,6 +142,21 @@
   gap: 8px;
 }
 
+.stat-rpm {
+  color: var(--accent);
+  font-size: 20px;
+  font-weight: 700;
+  opacity: 0.8;
+  margin-right: 4px;
+}
+
+.stat-rpm-unit {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-left: 3px;
+}
+
 .stat-value {
   font-size: 34px;
   font-weight: 700;
@@ -662,6 +677,28 @@
 .fettec-missing {
   color: var(--danger);
   font-weight: 700;
+}
+
+.fettec-row-problem td {
+  color: var(--warning);
+}
+
+.fettec-problem {
+  color: var(--warning);
+  font-weight: 700;
+}
+
+.fettec-echo-fallbacks {
+  color: var(--warning);
+}
+
+.fettec-rx-debug {
+  margin-top: 4px;
+  color: var(--text-dim);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .fettec-verdict {

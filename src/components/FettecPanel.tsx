@@ -71,8 +71,12 @@ export function FettecPanel() {
   const stepIndex = STEP_ORDER.indexOf(esc.busStats.state);
   const now = performance.now();
   const analog = esc.mspAnalog;
-  const escVolt = average(esc.telemetry.map((entry) => entry.volt));
-  const escAmps = average(esc.telemetry.map((entry) => entry.amps));
+  // A self-diagnosing channel (no motor / FET failure) reports problem codes
+  // that scale to fake numbers (2000→"20 A", a coded 8.47 V, 7357 mAh). Skip
+  // those so the ESC average / MSP cross-check reflects only real measurements.
+  const selfDiagnosis = new Set(esc.devices.filter((device) => device.problem !== null).map((device) => device.index));
+  const escVolt = average(esc.telemetry.map((entry) => (selfDiagnosis.has(entry.escIndex) ? null : entry.volt)));
+  const escAmps = average(esc.telemetry.map((entry) => (selfDiagnosis.has(entry.escIndex) ? null : entry.amps)));
   const crossCheckMismatch =
     analog !== null &&
     escVolt !== null &&
@@ -219,14 +223,25 @@ export function FettecPanel() {
                 const tlm = esc.telemetry[device.index];
                 const age = tlmAge(device.lastTelemetryMs, now);
                 const verdict = esc.check?.results.find((result) => result.escIndex === device.index)?.verdict;
+                // A FETtec self-diagnosis frame (consumption raw 7357) puts
+                // problem *codes* in the slots (e.g. code 2000 → "20 A", a
+                // coded voltage, "7357 mAh"). They are not measurements, so the
+                // configurator pops a warning instead of plotting them — so do we.
+                const problem = device.problem;
                 return (
-                  <tr key={device.id} class={age.stale ? "fettec-row-stale" : ""}>
+                  <tr key={device.id} class={`${age.stale ? "fettec-row-stale" : ""} ${problem ? "fettec-row-problem" : ""}`}>
                     <td>
                       {device.id}
                       {!device.present && (
                         <span class="fettec-missing" title={device.error ?? "not present"}>
                           {" "}
                           !
+                        </span>
+                      )}
+                      {problem && (
+                        <span class="fettec-problem" title={problem}>
+                          {" "}
+                          ⚠
                         </span>
                       )}
                       {verdict && (
@@ -241,17 +256,17 @@ export function FettecPanel() {
                         </span>
                       )}
                     </td>
-                    <td title={device.error ?? undefined}>{device.typeName}</td>
+                    <td title={problem ?? device.error ?? undefined}>{problem ? problem : device.typeName}</td>
                     <td>{device.firmware || "—"}</td>
                     <td class="fettec-serial" title={device.serial}>
                       {device.serial || "—"}
                     </td>
                     <td>{age.text}</td>
-                    <td>{fmt(tlm?.tempC, 0)}</td>
-                    <td>{fmt(tlm?.volt, 2)}</td>
-                    <td>{fmt(tlm?.amps, 2)}</td>
-                    <td>{fmt(tlm?.rpm, 0)}</td>
-                    <td>{fmt(tlm?.mah, 0)}</td>
+                    <td>{fmt(problem ? null : tlm?.tempC, 0)}</td>
+                    <td>{fmt(problem ? null : tlm?.volt, 2)}</td>
+                    <td>{fmt(problem ? null : tlm?.amps, 2)}</td>
+                    <td>{fmt(problem ? null : tlm?.rpm, 0)}</td>
+                    <td>{fmt(problem ? null : tlm?.mah, 0)}</td>
                   </tr>
                 );
               })}
@@ -264,6 +279,7 @@ export function FettecPanel() {
         {Array.from({ length: motorCount }, (_, index) => {
           const target = esc.targets[index] ?? 0;
           const tlm = esc.telemetry[index];
+          const motorProblem = esc.devices.find((device) => device.index === index)?.problem;
           return (
             <div class="fettec-motor" key={index}>
               <span class="fettec-motor-label">M{index + 1}</span>
@@ -289,7 +305,9 @@ export function FettecPanel() {
                 aria-label={`Motor ${index + 1} percent`}
                 onInput={(event) => setMotor(index, Number((event.target as HTMLInputElement).value))}
               />
-              <span class="fettec-motor-rpm tabular">{fmt(tlm?.rpm, 0)} rpm</span>
+              <span class="fettec-motor-rpm tabular" title={motorProblem ?? undefined}>
+                {motorProblem ? "no motor" : `${fmt(tlm?.rpm, 0)} rpm`}
+              </span>
             </div>
           );
         })}
@@ -398,7 +416,21 @@ export function FettecPanel() {
         <span>RX {(esc.busStats.rxBytesPerSecond / 1024).toFixed(1)} KB/s</span>
         <span>CRC {esc.busStats.crcErrors}</span>
         <span>timeouts {esc.busStats.timeouts}</span>
+        {esc.busStats.echoFallbacks > 0 && (
+          <span
+            class="fettec-echo-fallbacks"
+            title="Telemetry recovered by prefix-skip: the ESC echo was full-length but not byte-identical (the configurator/ArduPilot parse it without validating the echo)."
+          >
+            echo-fix {esc.busStats.echoFallbacks}
+          </span>
+        )}
       </div>
+
+      {esc.busStats.rxDebug && (
+        <div class="fettec-rx-debug tabular" title={esc.busStats.rxDebug}>
+          {esc.busStats.rxDebug}
+        </div>
+      )}
 
       <div class="esc-diagnostic" aria-live="polite">
         {esc.diagnostic}

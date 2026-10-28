@@ -188,11 +188,21 @@ The OneWire protocol has almost nothing in common with MSP. These cost real debu
   version+subversion, REQ_SN → 12 serial bytes, OK/SET_* ack → one `0` byte.
 - **Half-duplex echo.** Our own frames come back. `extractFrames` only accepts sources 0x02/0x03
   with a valid CRC (so echo/noise/truncation are skipped by construction). Fast telemetry has no
-  CRC: wait for the exact echo of the written frame, then read `count*2` bytes — never byte-count
-  blindly.
+  CRC: `consumeFastReply` prefers the exact echo, but real 4in1 rigs **bit-flip echo bytes** (field
+  log: byte 3 `FA→F8`, byte 0 `0x91→0x81` slot bit, `0x91→0x11` bit 7 — the 2 Mbit turnaround
+  collides with the ESC's reply start). So a full-length buffer is length-skipped and parsed
+  **without validating the echo** (configurator/ArduPilot rule); validating byte 0's
+  `0x80|slot<<4` marker rejects exactly the frames the bus corrupts most → "timeouts == frames".
+  The loop clears its buffer every cycle, so full length = the reply.
 - **Telemetry mode.** Fast-slot mode (`SET_TLM_TYPE 0`, 2 bytes/ESC/slot) is the configurator
   default. It is sent explicitly but a timeout/NOT_OK is tolerated (not every firmware acks it).
   Then `SET_FAST_COM_LENGTH` must be acknowledged.
+- **Reply window = USB poll quantization.** Linux polls the FC's CDC interface in 16 ms frames;
+  first bytes measurably arrive at +15/16 ms, and a reply split across two polls lands at ~32 ms.
+  The 20 ms window sat exactly on that boundary and clipped them (field log: timeouts with
+  `8 B rx +16 ms` = full echo, telemetry in the next poll). Default is **40 ms**; timeouts with a
+  *partial* byte count at +16 ms mean raise the setting, not that the bus is faulty. A
+  one-byte-short window (`15 B rx`) is a real CDC byte loss — rare, self-healing next cycle.
 - **Leaving passthrough needs a DTR drop.** Betaflight never exits on its own; the CLI line ends
   in `reset`, and `port.setSignals({ dataTerminalReady: false })` reboots the FC. Zero the motors
   ×3 first. The fake port records DTR transitions in `fettecSignals()`.
@@ -208,9 +218,9 @@ The OneWire protocol has almost nothing in common with MSP. These cost real debu
 - **Settings are captured at connect.** Count, ID base, poles and bus baud are read once by
   `fettecSession.connect`; the drawer disables those structural fields while connected and they
   take effect on reconnect.
-- **Hidden tab / port loss = stop.** `visibilitychange`, write errors and disconnects zero the
-  motors, pause the loop and show a banner. Background timers are throttled, so the ESC's 250 ms
-  failsafe is the backstop, never the primary guard.
+- **Port loss / write error = stop.** Write errors and disconnects zero the motors, pause the loop and show a banner.
+  A hidden tab no longer force-stops (user decision): background timers are throttled, so the ESC's 250 ms **hardware**
+  failsafe spins the motors down while the tab is hidden, and the ramp targets resume driving them when it shows again.
 - **Lazy panel.** `FettecPanel` is `lazy()` + `Suspense` from `EscPanel`; keep FETtec modules out
   of the entry import graph or the 150 kB gzip cap breaks.
 - **Fake serial**: the FETtec port is the third kind (`sensor` → `fc` → `fettec`;
