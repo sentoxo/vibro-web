@@ -32,7 +32,7 @@ export interface Settings {
   fettecCliLine: string; // "" = generated from the baud rate
   fettecAutoReboot: boolean; // drop DTR on disconnect (FC reboot)
   fettecCheckPower: number; // % used by the signal check
-  fettecRpmMotor: number; // 0 = mean of all ESCs, 1..8 = one motor
+  fettecRpmMotor: number; // -1 = mean of all, 0 = auto (highest throttle), 1..8 = one motor
   fettecScaleTemp: number;
   fettecScaleVoltage: number;
   fettecScaleCurrent: number;

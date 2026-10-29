@@ -143,7 +143,13 @@ export const FETTEC_CHECK_PULSE_MS = 400;
 export const FETTEC_CHECK_SETTLE_MS = 300;
 export const FETTEC_CHECK_ERPM_THRESHOLD = 500; // centi-eRPM
 export const FETTEC_CHECK_AMPS_THRESHOLD = 0.3; // A
-export const FETTEC_RPM_SOURCE_MEAN = 0;
+// RPM marker source: Auto follows the channel with the highest commanded
+// throttle (the motor the user dialed up), ties break on measured eRPM. Mean
+// averages every healthy channel, 1..8 pins one motor. Auto is the default:
+// Mean divides the marker frequency by the channel count on a 4in1 with one
+// prop fitted, and a pinned motor goes silent when the user drives another one.
+export const FETTEC_RPM_SOURCE_AUTO = 0;
+export const FETTEC_RPM_SOURCE_MEAN = -1;
 
 // === Persistence ===
 export const SETTINGS_STORAGE_KEY = "vibro.settings.v1";

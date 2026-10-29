@@ -22,6 +22,7 @@ import {
   FETTEC_REPLY_TIMEOUT_MAX_MS,
   FETTEC_REPLY_TIMEOUT_MIN_MS,
   FETTEC_REPLY_TIMEOUT_MS,
+  FETTEC_RPM_SOURCE_AUTO,
   FETTEC_RPM_SOURCE_MEAN,
   FFT_MAX_FREQ_CHOICES,
   IMU_HZ_CHOICES,
@@ -52,7 +53,7 @@ export const DEFAULT_SETTINGS: Settings = {
   fettecCliLine: "",
   fettecAutoReboot: true,
   fettecCheckPower: FETTEC_DEFAULT_CHECK_POWER,
-  fettecRpmMotor: FETTEC_RPM_SOURCE_MEAN,
+  fettecRpmMotor: FETTEC_RPM_SOURCE_AUTO,
   fettecScaleTemp: DEFAULT_TLM_SCALES.temp,
   fettecScaleVoltage: DEFAULT_TLM_SCALES.voltage,
   fettecScaleCurrent: DEFAULT_TLM_SCALES.current,
@@ -136,7 +137,10 @@ export function validateSettings(raw: unknown): Settings {
     fettecCliLine: cliLineIn(source.fettecCliLine),
     fettecAutoReboot: typeof source.fettecAutoReboot === "boolean" ? source.fettecAutoReboot : true,
     fettecCheckPower: intIn(source.fettecCheckPower, 1, 50, FETTEC_DEFAULT_CHECK_POWER),
-    fettecRpmMotor: intIn(source.fettecRpmMotor, 0, FETTEC_MAX_ESCS, FETTEC_RPM_SOURCE_MEAN),
+    // -1 = Mean of all, 0 = Auto (highest throttle), 1..8 = one motor. The old
+    // value space had 0 = Mean, so a saved 0 silently becomes Auto: the intended
+    // improvement, and Mean is one click away for anyone who wants it back.
+    fettecRpmMotor: intIn(source.fettecRpmMotor, FETTEC_RPM_SOURCE_MEAN, FETTEC_MAX_ESCS, FETTEC_RPM_SOURCE_AUTO),
     fettecScaleTemp: scaleIn(source.fettecScaleTemp, DEFAULT_TLM_SCALES.temp),
     fettecScaleVoltage: scaleIn(source.fettecScaleVoltage, DEFAULT_TLM_SCALES.voltage),
     fettecScaleCurrent: scaleIn(source.fettecScaleCurrent, DEFAULT_TLM_SCALES.current),

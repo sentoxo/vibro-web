@@ -10,6 +10,8 @@ import {
   FETTEC_MIN_POLES,
   FETTEC_REPLY_TIMEOUT_MAX_MS,
   FETTEC_REPLY_TIMEOUT_MIN_MS,
+  FETTEC_RPM_SOURCE_AUTO,
+  FETTEC_RPM_SOURCE_MEAN,
   FFT_MAX_FREQ_CHOICES,
   IMU_HZ_CHOICES,
   LSB_PER_G_CHOICES,
@@ -260,11 +262,13 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
           <select
             class="input"
             value={settings.fettecRpmMotor}
+            title="Which ESC feeds the RPM readout and the FFT 1×/2× marker lines. Auto follows the motor with the highest throttle; ties break on the highest measured eRPM. Self-diagnosing channels (no motor) are never a source."
             onChange={(event) =>
               store.patchSettings({ fettecRpmMotor: Number((event.target as HTMLSelectElement).value) })
             }
           >
-            <option value={0}>Mean of all</option>
+            <option value={FETTEC_RPM_SOURCE_AUTO}>Auto (highest throttle)</option>
+            <option value={FETTEC_RPM_SOURCE_MEAN}>Mean of all</option>
             {Array.from({ length: settings.fettecEscCount }, (_, index) => (
               <option value={index + 1} key={index + 1}>
                 Motor {index + 1}
@@ -272,6 +276,13 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
             ))}
           </select>
         </label>
+        {settings.fettecRpmMotor === FETTEC_RPM_SOURCE_AUTO && esc.mode === "fettec" && esc.connected && (
+          <div class="esc-dim" role="status">
+            {store.fettecRpmSourceIndex >= 0
+              ? `Following M${store.fettecRpmSourceIndex + 1} (highest throttle).`
+              : "No driven channel yet — the marker stays flat until a motor has throttle."}
+          </div>
+        )}
         <label class="checkbox-row">
           <input
             type="checkbox"

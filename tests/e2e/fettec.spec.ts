@@ -14,6 +14,20 @@ async function hasMotorValue(page: Page, motor: number, value: number): Promise<
   return frames.some((frame) => frame.values[motor] === value);
 }
 
+/** True when the last `count` fast-throttle frames carry `value` for `motor`. */
+async function motorIsAt(page: Page, motor: number, value: number, count = 5): Promise<boolean> {
+  const frames = await fettecFrames(page);
+  return frames.length >= count && frames.slice(-count).every((frame) => frame.values[motor] === value);
+}
+
+/** Type a throttle percentage into one motor's numeric input. */
+async function setMotorPercent(page: Page, motor: number, percent: number): Promise<void> {
+  const input = page.getByLabel(`Motor ${motor} percent`);
+  await input.press("Control+a");
+  await input.pressSequentially(String(percent), { delay: 30 });
+  await input.press("Enter");
+}
+
 async function openSettings(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Settings", exact: true }).click();
 }
@@ -116,6 +130,33 @@ test("FETtec passthrough: scan, signal check, per-motor ramp and DTR reboot", as
     .toBeGreaterThan(0);
   await expect(page.locator(".stat-rpm")).toContainText("rpm");
 
+  // START is a latch: a motor ramped back to 0 % keeps the bus armed, so
+  // driving it up again needs no second START (START stays disabled).
+  await setMotorPercent(page, 1, 0);
+  await expect.poll(() => motorIsAt(page, 0, 1000), { timeout: 10_000 }).toBe(true);
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__store.esc.value.running), { timeout: 5_000 })
+    .toBe(true);
+  await expect(page.getByRole("button", { name: "START", exact: true })).toBeDisabled();
+
+  await setMotorPercent(page, 1, 25);
+  await expect.poll(() => hasMotorValue(page, 0, 1250), { timeout: 10_000 }).toBe(true);
+
+  // Auto RPM source: the readout follows the motor with the highest throttle
+  // (M3 at 30 %, the rest sit at 20 %/25 %), not the mean of all channels.
+  await setMotorPercent(page, 3, 30);
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const esc = (window as any).__store.esc.value;
+          const rpm = esc.telemetry[2]?.rpm ?? 0;
+          return esc.targets[2] === 30 && rpm > 0 && Math.abs((window as any).__store.motorRpmHz * 60 - rpm) < 2;
+        }),
+      { timeout: 10_000 },
+    )
+    .toBe(true);
+
   // STOP ramps all motors back to the 1000 stop value.
   await page.getByRole("button", { name: "STOP", exact: true }).click();
   await expect
@@ -131,6 +172,26 @@ test("FETtec passthrough: scan, signal check, per-motor ramp and DTR reboot", as
     .poll(() => page.evaluate(() => (window as any).__store.esc.value.running), { timeout: 5_000 })
     .toBe(false);
   await expect(page.locator(".esc-running")).toHaveCount(0);
+
+  // STOP released the latch: the sliders command the targets, they no longer
+  // drive the bus — re-arming is what puts them back in charge.
+  await setMotorPercent(page, 1, 40);
+  await expect
+    .poll(
+      async () => {
+        const state = await page.evaluate(() => ({
+          target: (window as any).__store.esc.value.targets[0],
+          running: (window as any).__store.esc.value.running,
+        }));
+        return state.target === 40 && state.running === false && (await motorIsAt(page, 0, 1000));
+      },
+      { timeout: 10_000 },
+    )
+    .toBe(true);
+  await expect(page.getByRole("button", { name: "START", exact: true })).toBeEnabled();
+
+  await page.getByRole("button", { name: "START", exact: true }).click();
+  await expect.poll(() => hasMotorValue(page, 0, 1400), { timeout: 10_000 }).toBe(true);
 
   // Disconnect: zero frames, DTR drop (FC reboot) and the port closes.
   await page.getByRole("button", { name: "Disconnect FETtec" }).click();

@@ -33,12 +33,19 @@ export type FettecPhase = "idle" | "ramping" | "running";
 /**
  * Per-motor controller. `tick(now)` advances ramps; the bus loop calls it at
  * ~100 Hz and sends `rawValues()` in every fast-throttle frame.
+ *
+ * START is a **latch** (`armed`): it stays active until STOP, an emergency stop
+ * or a link drop. While armed, moving a slider — including back to 0 % and up
+ * again — drives the motors straight away, so the user never has to press START
+ * per motor test. Disarmed, the sliders only record the commanded targets;
+ * nothing turns until START.
  */
 export class FettecController {
   readonly count: number;
   phase: FettecPhase = "idle";
   private readonly targets: number[];
   private readonly currents: number[];
+  private latched = false;
   private stopping = false;
   private lastTick = 0;
 
@@ -56,7 +63,8 @@ export class FettecController {
     if (index < 0 || index >= this.count) return;
     if (this.stopping) return; // a stop ramp always wins
     this.targets[index] = clamp(percent, 0, 100);
-    if (this.phase !== "idle" && this.currents[index] !== this.targets[index]) {
+    if (!this.latched) return; // disarmed: the slider records the target, nothing turns
+    if (this.currents[index] !== this.targets[index]) {
       this.phase = "ramping";
       this.lastTick = 0;
     }
@@ -66,20 +74,25 @@ export class FettecController {
     for (let i = 0; i < this.count; i++) this.setMotor(i, percent);
   }
 
-  /** Begin spinning: ramp from the current values to the targets. */
+  /**
+   * START: latch the session armed. It stays armed while the sliders sit at
+   * 0 %, so ramping one back up needs no second START.
+   */
   start(): boolean {
     if (this.count === 0) return false;
     this.stopping = false;
+    this.latched = true;
     this.lastTick = 0;
-    this.phase = this.atTargets() ? (this.allZero() ? "running" : "running") : "ramping";
+    this.phase = this.atTargets() ? "running" : "ramping";
     return true;
   }
 
-  /** Stop ramp: targets to zero, 5 % per 50 ms. */
+  /** STOP: release the latch, targets to zero, 5 % per 50 ms. */
   stop(): boolean {
     if (this.count === 0) return false;
     this.targets.fill(0);
     this.stopping = true;
+    this.latched = false;
     this.lastTick = 0;
     this.phase = this.allZero() ? "idle" : "ramping";
     return true;
@@ -91,6 +104,7 @@ export class FettecController {
     this.currents.fill(0);
     this.phase = "idle";
     this.stopping = false;
+    this.latched = false;
     this.lastTick = 0;
   }
 
@@ -117,7 +131,9 @@ export class FettecController {
     }
     if (this.atTargets()) {
       this.stopping = false;
-      this.phase = this.allZero() ? "idle" : "running";
+      // Releasing the latch (STOP) is what makes a ramp-down end in "idle";
+      // an armed session keeps driving, even when every target is 0 %.
+      this.phase = this.latched ? "running" : "idle";
     }
     return changed;
   }
@@ -151,7 +167,7 @@ export class FettecController {
   }
 
   get running(): boolean {
-    return this.phase === "running" || (this.phase === "ramping" && !this.stopping);
+    return this.latched && this.phase !== "idle";
   }
 
   get ramping(): boolean {
@@ -160,6 +176,11 @@ export class FettecController {
 
   get idle(): boolean {
     return this.phase === "idle";
+  }
+
+  /** START latch: true from START until STOP / emergency stop / disconnect. */
+  get armed(): boolean {
+    return this.latched;
   }
 
   private atTargets(): boolean {

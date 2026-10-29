@@ -16,6 +16,7 @@ import {
   ZOOM_WINDOW_SECONDS,
 } from "../core/constants";
 import type { FettecBusStats, FettecCheckSummary, FettecDevice, FettecTelemetry } from "../core/fettec/types";
+import { fettecMarkerRpmHz, pickFettecRpmMotor, type FettecRpmSourceInput } from "../core/fettec/rpmSource";
 import type { MspAnalog } from "../core/msp";
 import { findPeaks } from "../core/peaks";
 import { RingBuffer } from "../core/ring-buffer";
@@ -324,7 +325,10 @@ class Store {
         });
       }
       this.selectBurst(0);
-      logInfo("file", `opened ${file.name} (${file.size} B): ${loaded.bursts.length} bursts, ${loaded.skipped} skipped`);
+      logInfo(
+        "file",
+        `opened ${file.name} (${file.size} B): ${loaded.bursts.length} bursts, ${loaded.skipped} skipped`,
+      );
       return loaded;
     } finally {
       this.busy.value = false;
@@ -768,20 +772,32 @@ class Store {
   get motorRpmHz(): number {
     const esc = this.esc.peek();
     if (esc.mode !== "fettec") return esc.rpm / 60;
-    // A self-diagnosing channel (no motor) has no real eRPM measurement (0 or
-    // coded values), so it must not dilute the mean — with one 4450 rpm motor
-    // on a 4-channel 4in1 the mean divided the marker frequency by 4
-    // (4450/4/60 = 18.5 Hz lines instead of 74 Hz).
-    const healthy = (index: number) => esc.devices.find((device) => device.index === index)?.problem == null;
-    const source = this.settings.peek().fettecRpmMotor;
-    if (source > 0) {
-      return (healthy(source - 1) ? (esc.telemetry[source - 1]?.rpm ?? 0) : 0) / 60;
-    }
-    const rpms = esc.telemetry
-      .map((entry) => (healthy(entry.escIndex) ? entry.rpm : null))
-      .filter((rpm): rpm is number => rpm !== null);
-    if (rpms.length === 0) return 0;
-    return rpms.reduce((sum, rpm) => sum + rpm, 0) / rpms.length / 60;
+    return fettecMarkerRpmHz(this.fettecRpmSourceInput());
+  }
+
+  /**
+   * Motor (0-based) that feeds the RPM marker / FFT lines, -1 = mean of every
+   * healthy channel. Under the Auto rule it is the motor the user has the
+   * highest throttle on, which is what the settings hint reports.
+   */
+  get fettecRpmSourceIndex(): number {
+    return pickFettecRpmMotor(this.fettecRpmSourceInput());
+  }
+
+  private fettecRpmSourceInput(): FettecRpmSourceInput {
+    const esc = this.esc.peek();
+    // A self-diagnosing channel (no motor / FET failure) reports problem *codes*
+    // in its slots (2000 → "20 A", 7357 mAh), so its eRPM is no measurement and
+    // must not drive the marker — and must not dilute the mean: with one
+    // 4450 rpm motor on a 4-channel 4in1 the mean divided the marker frequency
+    // by 4 (4450/4/60 = 18.5 Hz lines instead of 74 Hz).
+    const healthyFor = (index: number) => esc.devices.find((device) => device.index === index)?.problem == null;
+    return {
+      source: this.settings.peek().fettecRpmMotor,
+      targets: esc.targets,
+      rpms: esc.telemetry.map((entry) => entry.rpm),
+      healthy: esc.telemetry.map((entry) => healthyFor(entry.escIndex)),
+    };
   }
 
   // === Lifecycle ===

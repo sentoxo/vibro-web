@@ -29,7 +29,7 @@ read the FETtec configurator (`gui.fettec.net/js/ESC/onewire.js`, `js/ESC/protoc
 ```
 src/core/        pure logic: parser, fft (radix-2 + Bluestein), peaks, stats, dvb1, msp, esc,
                  naming, units, rate-meter, ring-buffer, settings, constants, types;
-                 fettec/ = OneWire protocol, controller, signal check, bus session
+                 fettec/ = OneWire protocol, controller, signal check, bus session, rpm source
 src/workers/     fft.worker.ts (spectrum off-thread), + sources/dvb1.worker.ts (parse off-thread)
 src/sources/     demo.ts, serial.ts (Web Serial sensor), file.ts (FileSource), fettec-serial.ts
 src/state/       store.ts (central orchestration), settings.ts, exporter.ts, toasts.ts,
@@ -92,8 +92,15 @@ scripts/         gen_golden.py (fixture regeneration), validate_export.py (byte-
   big-endian bytes per ESC per requested slot (0 temp signed, 1 V, 2 A signed, 3 ERPM×100,
   4 mAh, 5–7 debug); `rpm = erpm*2/poles`. Continuous ~100 Hz frames are mandatory (250 ms
   failsafe); per-motor values are 0..100 % and ramps are 5 %/50 ms, `emergencyStop()` is
-  immediate. Passthrough is
-  entered with `serialpassthrough esc_sensor 2000000 rxtx reset` and left by dropping DTR.
+  immediate. START is a **latch**: the bus stays armed until STOP, `emergencyStop()` or a link
+  drop; while armed the sliders drive the motors directly (a motor set to 0 % and back up needs
+  no second START), disarmed they only command targets and `setMotor` never moves a value.
+  Passthrough is entered with `serialpassthrough esc_sensor 2000000 rxtx reset` and left by dropping DTR.
+- **FETtec RPM marker source** (hero readout + FFT 1×/2× lines): `fettecRpmMotor` is `0` = Auto
+  (default), `-1` = mean of all, `1..8` = one pinned motor. Auto follows the **highest commanded
+  throttle**, ties break on the highest measured eRPM (then the lowest index), and a
+  self-diagnosing channel (no motor: its slots carry codes) is never a source. A saved `0` used to
+  mean "mean of all"; it now means Auto, which is the intended improvement.
 - **MSP v1**: `$M<`/`$M>` size cmd payload xor (xor over size+cmd+payload); telemetry record
   check is `len >= offset + 4` (desktop loose rule), records are 13 bytes.
 - **Files/naming**: `{base}{index:02d}_{power}` with `_02` collision suffixes; demo burst
@@ -218,6 +225,14 @@ The OneWire protocol has almost nothing in common with MSP. These cost real debu
 - **Signal check must start before setMotor.** `runSignalCheck` calls `io.start()` first; a stop
   ramp wins over `setMotor`, so the old order suppressed every test pulse and every ESC looked
   like an FC-pin ESC.
+- **START is a latch, not a step.** The controller used to auto-disarm whenever every target
+  reached 0 %, so the panel went "idle" and the sliders stopped moving the motors — the user had to
+  press START once per motor test. `armed` is released only by STOP / `emergencyStop()` / a link
+  drop, and `running === armed && phase !== "idle"`: an armed session at 0 % is *not* idle. Do not
+  re-add an `allZero() → idle` transition in `tick`, that is the regression.
+- **`fettecRpmMotor` value space changed.** 0 is Auto, Mean moved to `-1` (`FETTEC_RPM_SOURCE_MEAN`),
+  so the validator range is `-1..FETTEC_MAX_ESCS`. Never branch on `source > 0` alone — Auto is 0
+  and the Mean branch is negative; `core/fettec/rpmSource.ts` owns the selection rules.
 - **Settings are captured at connect.** Count, ID base, poles and bus baud are read once by
   `fettecSession.connect`; the drawer disables those structural fields while connected and they
   take effect on reconnect.

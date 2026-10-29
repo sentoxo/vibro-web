@@ -203,20 +203,22 @@ class FettecSession {
     });
   }
 
+  /** START: arm the controller; it stays armed until STOP / emergency / drop. */
   start(): boolean {
     const controller = this.controller;
     if (!controller || !this.isConnected) return false;
     const ok = controller.start();
-    if (ok) logInfo("fettec", `START: motors ramping (targets: ${controller.targetValues().join(", ")} %)`);
+    if (ok) logInfo("fettec", `START: armed, targets ${controller.targetValues().join(", ")} %`);
     this.syncControl(performance.now(), true);
     return ok;
   }
 
+  /** STOP: release the arm latch and ramp every motor down to the stop value. */
   stop(): boolean {
     const controller = this.controller;
     if (!controller) return false;
     const ok = controller.stop();
-    if (ok) logInfo("fettec", `STOP: ramping down from ${controller.currentPower}%`);
+    if (ok) logInfo("fettec", `STOP: disarmed, ramping down from ${controller.currentPower}%`);
     this.syncControl(performance.now(), true);
     return ok;
   }

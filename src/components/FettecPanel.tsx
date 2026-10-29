@@ -130,6 +130,12 @@ export function FettecPanel() {
     void fettecSession.emergencyStop("Emergency stop");
   };
 
+  // The arm latch is the whole start/stop story: START arms the bus, and the
+  // sliders drive the motors from then on (0 % and back up included), until
+  // STOP / Emergency stop / a link drop releases it.
+  const armed = esc.running;
+  const idleArmed = armed && esc.power === 0;
+
   const runCheck = () => {
     if (!connected) {
       pushToast({ kind: "error", title: "FETtec", message: "Connect the bus first." });
@@ -161,7 +167,7 @@ export function FettecPanel() {
     <>
       <div class="esc-status">
         FETtec: <b>{connected ? "connected" : connecting ? "connecting…" : "disconnected"}</b>
-        {esc.running && <span class="esc-running"> · RUNNING</span>}
+        {esc.running && <span class="esc-running"> · {idleArmed ? "armed (0 %)" : "RUNNING"}</span>}
         {esc.ramping && <span class="esc-running"> · ramping…</span>}
         {esc.checkRunning && <span class="esc-dim"> · signal check…</span>}
       </div>
@@ -229,7 +235,10 @@ export function FettecPanel() {
                 // configurator pops a warning instead of plotting them — so do we.
                 const problem = device.problem;
                 return (
-                  <tr key={device.id} class={`${age.stale ? "fettec-row-stale" : ""} ${problem ? "fettec-row-problem" : ""}`}>
+                  <tr
+                    key={device.id}
+                    class={`${age.stale ? "fettec-row-stale" : ""} ${problem ? "fettec-row-problem" : ""}`}
+                  >
                     <td>
                       {device.id}
                       {!device.present && (
@@ -341,13 +350,25 @@ export function FettecPanel() {
         <button
           class="btn btn-accent"
           disabled={!connected || esc.running || esc.ramping || esc.checkRunning}
+          title="Arms the bus. It stays armed until STOP, Emergency stop or a link drop: while armed, the sliders drive the motors, so setting one to 0 % and back up needs no second START."
           onClick={start}
         >
           START
         </button>
-        <button class="btn btn-danger esc-stop" disabled={!connected || (!esc.running && !esc.ramping)} onClick={stop}>
+        <button
+          class="btn btn-danger esc-stop"
+          disabled={!connected || (!esc.running && !esc.ramping)}
+          title="Releases the arm latch and ramps every motor down to the 1000 stop value."
+          onClick={stop}
+        >
           STOP
         </button>
+      </div>
+
+      <div class="esc-dim">
+        {armed
+          ? "Armed: the sliders drive the motors directly — 0 % and back up needs no second START. STOP releases the latch."
+          : "START arms the bus and stays armed until STOP, Emergency stop or a link drop; the sliders command the motors while armed."}
       </div>
 
       <div class="esc-actions">

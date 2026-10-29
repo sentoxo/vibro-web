@@ -83,6 +83,7 @@ describe("FettecController", () => {
     expect(controller.currentValues()).toEqual([10]);
 
     expect(controller.stop()).toBe(true);
+    expect(controller.armed).toBe(false); // STOP releases the START latch
     expect(controller.phase).toBe("ramping");
     expect(controller.targetValues()).toEqual([0]);
     controller.setMotor(0, 50); // a stop ramp always wins
@@ -99,6 +100,67 @@ describe("FettecController", () => {
     expect(controller.rawValues()).toEqual([1000]);
   });
 
+  it("START latches: 0 % and back up needs no second START", () => {
+    const controller = new FettecController(1);
+    controller.setMotor(0, 20);
+    controller.start();
+    controller.tick(1000);
+    for (const now of [1050, 1100, 1150, 1200]) controller.tick(now);
+    expect(controller.currentValues()).toEqual([20]);
+
+    // slider back to 0 %: it ramps down and the latch keeps the session live
+    controller.setMotor(0, 0);
+    expect(controller.phase).toBe("ramping");
+    controller.tick(1250); // the target change re-established the ramp clock
+    for (const now of [1300, 1350, 1400, 1450]) controller.tick(now);
+    expect(controller.currentValues()).toEqual([0]);
+    expect(controller.rawValues()).toEqual([1000]); // the ESC stop value
+    expect(controller.running).toBe(true);
+    expect(controller.phase).toBe("running");
+
+    // ... and straight back up, without touching START again
+    controller.setMotor(0, 15);
+    expect(controller.phase).toBe("ramping");
+    controller.tick(1500);
+    for (const now of [1550, 1600, 1650]) controller.tick(now);
+    expect(controller.currentValues()).toEqual([15]);
+    expect(controller.running).toBe(true);
+  });
+
+  it("START with every slider at 0 % arms the bus so later moves drive the motors", () => {
+    const controller = new FettecController(2);
+    expect(controller.start()).toBe(true);
+    expect(controller.armed).toBe(true);
+    expect(controller.phase).toBe("running");
+    expect(controller.running).toBe(true);
+    expect(controller.currentPower).toBe(0);
+    expect(controller.rawValues()).toEqual([1000, 1000]);
+
+    controller.setAll(10);
+    expect(controller.phase).toBe("ramping");
+    controller.tick(1000);
+    controller.tick(1050);
+    expect(controller.currentValues()).toEqual([5, 5]);
+  });
+
+  it("disarmed sliders command the targets only; nothing turns before START", () => {
+    const controller = new FettecController(2);
+    controller.setAll(25);
+    controller.setMotor(0, 40);
+    expect(controller.targetValues()).toEqual([40, 25]);
+    expect(controller.currentValues()).toEqual([0, 0]);
+    expect(controller.rawValues()).toEqual([1000, 1000]);
+    expect(controller.phase).toBe("idle");
+    expect(controller.running).toBe(false);
+    expect(controller.armed).toBe(false);
+
+    controller.start();
+    expect(controller.phase).toBe("ramping");
+    controller.tick(1000);
+    controller.tick(1050);
+    expect(controller.currentValues()).toEqual([5, 5]);
+  });
+
   it("emergencyStop zeroes the values immediately", () => {
     const controller = new FettecController(2);
     controller.setAll(40);
@@ -110,6 +172,7 @@ describe("FettecController", () => {
     expect(controller.currentValues()).toEqual([0, 0]);
     expect(controller.targetValues()).toEqual([0, 0]);
     expect(controller.phase).toBe("idle");
+    expect(controller.armed).toBe(false);
     expect(controller.rawValues()).toEqual([1000, 1000]);
   });
 
