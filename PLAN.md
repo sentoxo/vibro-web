@@ -1088,10 +1088,11 @@ before passthrough is shown alongside ESC V/A for scale verification.
 
 **UI** — `FettecPanel`: step badges, connect/disconnect, device table (model, FW, SN, TLM
 age, temp/V/A/RPM/mAh), bus stats, signal-check table, 8 sliders + numeric inputs, apply
-to all, START, big STOP, emergency stop, paused banner, shared `SafetyDialog`. Settings
-drawer gains a FETtec section (bus baud 115200/500000/2000000, ESC count 1–8, ID base,
-poles, CLI-line override, check power, RPM source motor, auto-reboot, telemetry scale
-overrides), persisted and clamped; structural fields are disabled while connected.
+to all, START, big STOP, emergency stop, paused banner, shared `SafetyDialog`. The FETtec
+setup (bus baud 115200/500000/2000000, ESC count 1–8, ID base, poles, reply timeout, CLI-line
+override, check power, RPM source motor, auto-reboot, telemetry scale overrides) lives in the
+centered `FettecSettingsDialog`, opened from the header gear and the drawer's FETtec summary;
+persisted and clamped, structural fields disabled while connected.
 
 **Safety** — D19: unlike the MSP path, FETtec requires continuous frames (the ESC stops
 after 250 ms of silence). Frames run for the whole session; STOP is always reachable;

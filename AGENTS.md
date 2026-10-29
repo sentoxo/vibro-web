@@ -36,10 +36,10 @@ src/state/       store.ts (central orchestration), settings.ts, exporter.ts, toa
                  fettec-session.ts (store ↔ bus ↔ controller)
 src/charts/      chart.ts (uPlot factory), export-png.ts
 src/components/  Preact components (Header, Landing, ChartGrid, SettingsDrawer, EscPanel,
-                 MspEscPanel, FettecPanel (lazy), SafetyDialog, …)
+                 MspEscPanel, FettecPanel (lazy), FettecSettingsDialog, SafetyDialog, …)
 tests/unit/      vitest node project (parser/fft/golden/stats/peaks/dvb1/msp/esc/fettec/…)
 tests/dom/       vitest jsdom project (settings persistence)
-tests/e2e/       Playwright specs (+ support/fake-serial.ts mock)
+tests/e2e/       Playwright specs (+ support/fake-serial.ts mock, support/ui.ts panel openers)
 tests/fixtures/  test_data.bin (6×6400@3200 DVB1 container), golden.json, py_dvb1_*.bin
 scripts/         gen_golden.py (fixture regeneration), validate_export.py (byte-parity gate)
 ```
@@ -176,6 +176,13 @@ E2E downloads `tests/.artifacts/exported.bin` during the file-mode spec; the CI 
 - **Session epochs**: `SerialSource` binds each read loop/timer to an `epoch`; `stop()` and every
   connect bump it. Don't move cross-session state (parser, seq tracker, stats patches) outside
   that guard — a stale callback resurrecting `lostPackets` was the phantom-warning bug.
+- **Two settings surfaces.** The header gear (`ESC settings`) opens the centered
+  `FettecSettingsDialog`, rendered at the app root so it works on the landing screen too (the drawer
+  is only mounted on the dashboard, which is why the gear looked dead there). The panel icon
+  (`Open controls panel`) opens the drawer. Every FETtec setting lives **only** in the window; the
+  drawer's FETtec section just summarises the bus and opens it. Copying fields into both would put
+  two controls behind one label and break `getByLabel`. E2E opens them through
+  `openControls()` / `openEscSettings()` from `tests/e2e/support/ui.ts`.
 
 ## FETtec gotchas
 
@@ -234,8 +241,8 @@ The OneWire protocol has almost nothing in common with MSP. These cost real debu
   so the validator range is `-1..FETTEC_MAX_ESCS`. Never branch on `source > 0` alone — Auto is 0
   and the Mean branch is negative; `core/fettec/rpmSource.ts` owns the selection rules.
 - **Settings are captured at connect.** Count, ID base, poles and bus baud are read once by
-  `fettecSession.connect`; the drawer disables those structural fields while connected and they
-  take effect on reconnect.
+  `fettecSession.connect`; the FETtec ESC settings window disables those structural fields while
+  connected and they take effect on reconnect.
 - **Port loss / write error = stop.** Write errors and disconnects zero the motors, pause the loop and show a banner.
   A hidden tab no longer force-stops (user decision): background timers are throttled, so the ESC's 250 ms **hardware**
   failsafe spins the motors down while the tab is hidden, and the ramp targets resume driving them when it shows again.

@@ -3,6 +3,7 @@
 
 import { expect, test, type Page } from "@playwright/test";
 import { installFakeSerial } from "./support/fake-serial";
+import { openControls } from "./support/ui";
 
 async function sensorTexts(page: Page): Promise<string> {
   const writes = await page.evaluate(() => window.__fakeSerial?.lastWrites("sensor") ?? []);
@@ -131,7 +132,7 @@ test.describe("mock serial sensor", () => {
     await connectSensor(page);
     await expect.poll(() => sensorTexts(page), { timeout: 15_000 }).toContain("start stream");
 
-    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await openControls(page);
     await page.getByRole("button", { name: "Connect FC (115200)" }).click();
     await expect(page.locator(".esc-status b")).toHaveText("connected", { timeout: 10_000 });
 

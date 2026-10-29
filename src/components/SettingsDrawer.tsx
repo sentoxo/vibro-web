@@ -1,15 +1,12 @@
 // Settings sidebar / drawer: source, analysis, export, ESC, advanced
 // (plan §5.6). All values persist via store settings.
+//
+// The FETtec ESC *setup* is not here: it lives in the centered
+// FettecSettingsDialog (header gear), which also makes it reachable from the
+// landing screen where this drawer is not mounted. The section below only
+// summarises the bus and opens that window.
 
 import {
-  FETTEC_BAUD_CHOICES,
-  FETTEC_MAX_ESCS,
-  FETTEC_MAX_ID_BASE,
-  FETTEC_MAX_POLES,
-  FETTEC_MIN_ID_BASE,
-  FETTEC_MIN_POLES,
-  FETTEC_REPLY_TIMEOUT_MAX_MS,
-  FETTEC_REPLY_TIMEOUT_MIN_MS,
   FETTEC_RPM_SOURCE_AUTO,
   FETTEC_RPM_SOURCE_MEAN,
   FFT_MAX_FREQ_CHOICES,
@@ -18,7 +15,6 @@ import {
   WINDOW_SECONDS,
   ZOOM_WINDOW_SECONDS,
 } from "../core/constants";
-import { DEFAULT_TLM_SCALES } from "../core/fettec/protocol";
 import { store } from "../state/store";
 import { pushToast } from "../state/toasts";
 import { BurstSelect } from "./BurstSelect";
@@ -26,15 +22,20 @@ import { EscPanel } from "./EscPanel";
 import { ExportPanel } from "./ExportPanel";
 import { FileDropZone } from "./FileDropZone";
 
+/** Short label for the RPM marker source, for the drawer's FETtec summary. */
+function rpmSourceLabel(source: number): string {
+  if (source === FETTEC_RPM_SOURCE_AUTO) return "Auto";
+  if (source === FETTEC_RPM_SOURCE_MEAN) return "Mean";
+  return `M${source}`;
+}
+
 export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const settings = store.settings.value;
   const kind = store.sourceKind.value;
   const staticMode = store.staticMode.value;
-  const esc = store.esc.value;
-  const fettecLive = esc.connected && esc.mode === "fettec";
 
   return (
-    <aside class={`settings-drawer ${open ? "settings-drawer-open" : ""}`} aria-label="Settings">
+    <aside class={`settings-drawer ${open ? "settings-drawer-open" : ""}`} aria-label="Controls panel">
       <div class="drawer-head">
         <span>Controls</span>
         <button class="btn btn-icon" aria-label="Close settings" onClick={onClose}>
@@ -160,219 +161,19 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
       <section class="drawer-section">
         <div class="section-label">FETtec ESC</div>
         <div class="esc-dim fettec-settings-note">
-          Structural changes (baud, count, ID base, poles, CLI line) apply on the next connect.
+          {settings.fettecEscCount} ESC · IDs {settings.fettecIdBase}-
+          {settings.fettecIdBase + settings.fettecEscCount - 1} · {settings.fettecPoles} poles ·{" "}
+          {settings.fettecEscBaud} · RPM {rpmSourceLabel(settings.fettecRpmMotor)}
         </div>
-        <label class="field-row">
-          <span>ESC bus baud</span>
-          <select
-            class="input"
-            value={settings.fettecEscBaud}
-            disabled={fettecLive}
-            onChange={(event) =>
-              store.patchSettings({ fettecEscBaud: Number((event.target as HTMLSelectElement).value) })
-            }
-          >
-            {FETTEC_BAUD_CHOICES.map((baud) => (
-              <option value={baud} key={baud}>
-                {baud}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label class="field-row">
-          <span>ESC count</span>
-          <input
-            class="input"
-            type="number"
-            min={1}
-            max={FETTEC_MAX_ESCS}
-            value={settings.fettecEscCount}
-            disabled={fettecLive}
-            onInput={(event) =>
-              store.patchSettings({ fettecEscCount: Number((event.target as HTMLInputElement).value) })
-            }
-          />
-        </label>
-        <label class="field-row">
-          <span>First OneWire ID</span>
-          <input
-            class="input"
-            type="number"
-            min={FETTEC_MIN_ID_BASE}
-            max={FETTEC_MAX_ID_BASE}
-            value={settings.fettecIdBase}
-            disabled={fettecLive}
-            onInput={(event) => store.patchSettings({ fettecIdBase: Number((event.target as HTMLInputElement).value) })}
-          />
-        </label>
-        <label class="field-row">
-          <span>Motor poles</span>
-          <input
-            class="input"
-            type="number"
-            min={FETTEC_MIN_POLES}
-            max={FETTEC_MAX_POLES}
-            value={settings.fettecPoles}
-            disabled={fettecLive}
-            onInput={(event) => store.patchSettings({ fettecPoles: Number((event.target as HTMLInputElement).value) })}
-          />
-        </label>
-        <label class="field-row">
-          <span>Reply timeout</span>
-          <input
-            class="input"
-            type="number"
-            min={FETTEC_REPLY_TIMEOUT_MIN_MS}
-            max={FETTEC_REPLY_TIMEOUT_MAX_MS}
-            step={5}
-            value={settings.fettecReplyTimeoutMs}
-            disabled={fettecLive}
-            title="Fast-telemetry reply window in ms. The FC's USB CDC data arrives in ~16 ms polls; a reply split across two polls lands at ~32 ms. Raise it (40–60) when stats show timeouts with a partial byte count (e.g. '8 B rx +16 ms' = echo arrived, telemetry did not)."
-            onInput={(event) =>
-              store.patchSettings({ fettecReplyTimeoutMs: Number((event.target as HTMLInputElement).value) })
-            }
-          />
-        </label>
-        <label class="field-row">
-          <span>CLI line override</span>
-          <input
-            class="input fettec-cli-input"
-            type="text"
-            value={settings.fettecCliLine}
-            placeholder="serialpassthrough esc_sensor 2000000 rxtx reset"
-            disabled={fettecLive}
-            onInput={(event) => store.patchSettings({ fettecCliLine: (event.target as HTMLInputElement).value })}
-          />
-        </label>
-        <label class="field-row">
-          <span>Signal check power</span>
-          <input
-            class="input"
-            type="number"
-            min={1}
-            max={50}
-            value={settings.fettecCheckPower}
-            onInput={(event) =>
-              store.patchSettings({ fettecCheckPower: Number((event.target as HTMLInputElement).value) })
-            }
-          />
-        </label>
-        <label class="field-row">
-          <span>RPM source motor</span>
-          <select
-            class="input"
-            value={settings.fettecRpmMotor}
-            title="Which ESC feeds the RPM readout and the FFT 1×/2× marker lines. Auto follows the motor with the highest throttle; ties break on the highest measured eRPM. Self-diagnosing channels (no motor) are never a source."
-            onChange={(event) =>
-              store.patchSettings({ fettecRpmMotor: Number((event.target as HTMLSelectElement).value) })
-            }
-          >
-            <option value={FETTEC_RPM_SOURCE_AUTO}>Auto (highest throttle)</option>
-            <option value={FETTEC_RPM_SOURCE_MEAN}>Mean of all</option>
-            {Array.from({ length: settings.fettecEscCount }, (_, index) => (
-              <option value={index + 1} key={index + 1}>
-                Motor {index + 1}
-              </option>
-            ))}
-          </select>
-        </label>
-        {settings.fettecRpmMotor === FETTEC_RPM_SOURCE_AUTO && esc.mode === "fettec" && esc.connected && (
-          <div class="esc-dim" role="status">
-            {store.fettecRpmSourceIndex >= 0
-              ? `Following M${store.fettecRpmSourceIndex + 1} (highest throttle).`
-              : "No driven channel yet — the marker stays flat until a motor has throttle."}
-          </div>
-        )}
-        <label class="checkbox-row">
-          <input
-            type="checkbox"
-            checked={settings.fettecAutoReboot}
-            onChange={(event) => store.patchSettings({ fettecAutoReboot: (event.target as HTMLInputElement).checked })}
-          />
-          <span>Drop DTR on disconnect (reboot FC)</span>
-        </label>
-        <details class="fettec-scale-details">
-          <summary>Telemetry scale overrides</summary>
-          <label class="field-row">
-            <span>Temperature ×</span>
-            <input
-              class="input"
-              type="number"
-              min={0.0001}
-              step={0.01}
-              value={settings.fettecScaleTemp}
-              onInput={(event) =>
-                store.patchSettings({ fettecScaleTemp: Number((event.target as HTMLInputElement).value) })
-              }
-            />
-          </label>
-          <label class="field-row">
-            <span>Voltage ×</span>
-            <input
-              class="input"
-              type="number"
-              min={0.0001}
-              step={0.01}
-              value={settings.fettecScaleVoltage}
-              onInput={(event) =>
-                store.patchSettings({ fettecScaleVoltage: Number((event.target as HTMLInputElement).value) })
-              }
-            />
-          </label>
-          <label class="field-row">
-            <span>Current ×</span>
-            <input
-              class="input"
-              type="number"
-              min={0.0001}
-              step={0.01}
-              value={settings.fettecScaleCurrent}
-              onInput={(event) =>
-                store.patchSettings({ fettecScaleCurrent: Number((event.target as HTMLInputElement).value) })
-              }
-            />
-          </label>
-          <label class="field-row">
-            <span>eRPM ×</span>
-            <input
-              class="input"
-              type="number"
-              min={0.0001}
-              step={0.01}
-              value={settings.fettecScaleErpm}
-              onInput={(event) =>
-                store.patchSettings({ fettecScaleErpm: Number((event.target as HTMLInputElement).value) })
-              }
-            />
-          </label>
-          <label class="field-row">
-            <span>Consumption ×</span>
-            <input
-              class="input"
-              type="number"
-              min={0.0001}
-              step={0.01}
-              value={settings.fettecScaleConsumption}
-              onInput={(event) =>
-                store.patchSettings({ fettecScaleConsumption: Number((event.target as HTMLInputElement).value) })
-              }
-            />
-          </label>
+        <div class="drawer-buttons">
           <button
             class="btn btn-small"
-            onClick={() =>
-              store.patchSettings({
-                fettecScaleTemp: DEFAULT_TLM_SCALES.temp,
-                fettecScaleVoltage: DEFAULT_TLM_SCALES.voltage,
-                fettecScaleCurrent: DEFAULT_TLM_SCALES.current,
-                fettecScaleErpm: DEFAULT_TLM_SCALES.erpm,
-                fettecScaleConsumption: DEFAULT_TLM_SCALES.consumption,
-              })
-            }
+            title="OneWire bus setup in a centered window: count, ID base, poles, baud, reply timeout, CLI line, RPM source, telemetry scales"
+            onClick={() => window.dispatchEvent(new CustomEvent("vibro:esc-settings"))}
           >
-            Reset scales
+            Open FETtec ESC settings
           </button>
-        </details>
+        </div>
       </section>
 
       <section class="drawer-section">

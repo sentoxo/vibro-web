@@ -95,7 +95,8 @@ raw mapping.
 **`src/components/FettecPanel.tsx`** — lazy-loaded (entry bundle stays under the 150 kB CI cap):
 - step badges `CLI → passthrough → scan → init → ready`;
 - device table: ID, model, FW, SN, TLM age, per-row Temp/V/A/RPM/mAh, stale flag;
-- 8 per-motor % sliders + numeric inputs, `apply to all`, START / big STOP, ramp badge;
+- 8 per-motor % sliders + numeric inputs, `apply to all`, START / big STOP, ramp badge
+  (START is a latch: armed until STOP / emergency stop / link drop);
 - bus stats + diagnostic line.
 
 **`src/components/EscPanel.tsx`** — segmented mode switch `MSP` / `FETtec passthrough` on
@@ -104,9 +105,11 @@ dead). Switching tears the session down; MSP controls disabled while passthrough
 Shared `SafetyDialog` (text extended: OneWire, continuous frames, FC reboots on disconnect).
 
 **Settings** (`src/state/settings.ts`, `src/core/constants.ts`, `src/core/types.ts`) —
-new "FETtec ESC" section, persisted + clamped: ESC bus baud (115200/500000/2000000),
-ESC count 1..8, ID base, poles, CLI-line override, auto-reboot-on-disconnect,
-signal-check power %, per-unit scale overrides, RPM source motor.
+persisted + clamped: ESC bus baud (115200/500000/2000000), ESC count 1..8, ID base, poles,
+CLI-line override, auto-reboot-on-disconnect, signal-check power %, per-unit scale overrides,
+RPM source motor (Auto = highest throttle, Mean, Motor N).
+The fields live in **`src/components/FettecSettingsDialog.tsx`**, a centered window opened from the
+header gear and from the drawer's FETtec summary (which only shows the bus line and the opener).
 
 ## Phase 3 — spin + signal check box
 

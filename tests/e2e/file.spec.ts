@@ -3,6 +3,7 @@
 
 import { expect, test } from "@playwright/test";
 import { fileURLToPath } from "node:url";
+import { openControls } from "./support/ui";
 
 const FIXTURE = fileURLToPath(new URL("../fixtures/test_data.bin", import.meta.url));
 
@@ -17,7 +18,7 @@ test.describe("file mode", () => {
     expect(bursts).toBe(6);
 
     // Burst selector lists every burst with its sequence.
-    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await openControls(page);
     const burstSelect = page.getByLabel("Select burst");
     await expect(burstSelect.locator("option")).toHaveCount(6);
     await expect(burstSelect.locator("option").first()).toContainText("Burst 1 (seq");

@@ -76,7 +76,12 @@ export function Header({
           Connect
         </button>
       )}
-      <button class="btn btn-icon" aria-label="Open file" title="Open DVB1 file" onClick={onSettings}>
+      <button
+        class="btn btn-icon"
+        aria-label="Open controls panel"
+        title="Controls panel: source, analysis, export, ESC control, files"
+        onClick={onSettings}
+      >
         <svg
           width="16"
           height="16"
@@ -110,10 +115,10 @@ export function Header({
       </button>
       <button
         class="btn btn-icon"
-        aria-label="Settings"
-        title="Settings"
+        aria-label="ESC settings"
+        title="FETtec ESC settings: OneWire bus, motors, RPM source, telemetry scales"
         onClick={() => {
-          window.dispatchEvent(new CustomEvent("vibro:toggle-settings"));
+          window.dispatchEvent(new CustomEvent("vibro:esc-settings"));
         }}
       >
         <svg

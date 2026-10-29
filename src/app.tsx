@@ -10,6 +10,7 @@ import { UpdatePrompt } from "./components/UpdatePrompt";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import { ConnectDialog } from "./components/ConnectDialog";
 import { AboutDialog } from "./components/AboutDialog";
+import { FettecSettingsDialog } from "./components/FettecSettingsDialog";
 import { LostPacketsDialog } from "./components/LostPacketsDialog";
 import { Landing } from "./components/Landing";
 import { ChartGrid } from "./components/ChartGrid";
@@ -20,10 +21,11 @@ export function App() {
   const settingsOpen = useSignal(typeof window !== "undefined" && window.matchMedia("(min-width: 1440px)").matches);
   const connectOpen = useSignal(false);
   const aboutOpen = useSignal(false);
+  const escSettingsOpen = useSignal(false);
 
   useEffect(() => {
-    const onToggleSettings = () => {
-      settingsOpen.value = !settingsOpen.value;
+    const onEscSettings = () => {
+      escSettingsOpen.value = true;
     };
     const onConnect = () => {
       connectOpen.value = true;
@@ -32,14 +34,15 @@ export function App() {
       if (event.key === "Escape") {
         connectOpen.value = false;
         aboutOpen.value = false;
+        escSettingsOpen.value = false;
       }
     };
-    window.addEventListener("vibro:toggle-settings", onToggleSettings);
+    window.addEventListener("vibro:esc-settings", onEscSettings);
     window.addEventListener("vibro:connect", onConnect);
     window.addEventListener("keydown", onKey);
     store.scheduleLandingDemo();
     return () => {
-      window.removeEventListener("vibro:toggle-settings", onToggleSettings);
+      window.removeEventListener("vibro:esc-settings", onEscSettings);
       window.removeEventListener("vibro:connect", onConnect);
       window.removeEventListener("keydown", onKey);
     };
@@ -86,6 +89,7 @@ export function App() {
       <UpdatePrompt />
       {connectOpen.value && <ConnectDialog onClose={() => (connectOpen.value = false)} />}
       {aboutOpen.value && <AboutDialog onClose={() => (aboutOpen.value = false)} />}
+      {escSettingsOpen.value && <FettecSettingsDialog onClose={() => (escSettingsOpen.value = false)} />}
       {store.lostPacketWarning.value && <LostPacketsDialog onClose={() => (store.lostPacketWarning.value = false)} />}
     </div>
   );

@@ -1,6 +1,7 @@
 // Landing page + demo mode: autoplay stream, charts, burst mode, snapshot parity.
 
 import { expect, test } from "@playwright/test";
+import { openControls } from "./support/ui";
 
 test.describe("landing and demo", () => {
   test("autoplays the landing demo with six live charts and hero stats", async ({ page }) => {
@@ -23,7 +24,7 @@ test.describe("landing and demo", () => {
   test("burst mode: four demo bursts, selectable, with peak cards", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("button", { name: "Explore demo" }).click();
-    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await openControls(page);
     await page.getByRole("group", { name: "Source mode" }).getByRole("button", { name: "Bursts" }).click();
 
     const burstSelect = page.getByLabel("Select burst");
@@ -43,7 +44,7 @@ test.describe("landing and demo", () => {
   test("FFT max only zooms the spectrum; it never moves the peaks", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("button", { name: "Explore demo" }).click();
-    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await openControls(page);
 
     // Demo axis 0 carries a 48 Hz tone. The FFT runs at the real IMU rate, so
     // the reported peak must stay at ~48 Hz for every "FFT max" setting. The

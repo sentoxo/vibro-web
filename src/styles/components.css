@@ -917,6 +917,52 @@
   margin-top: 4px;
 }
 
+/* === FETtec ESC settings window === */
+/* The drawer's FETtec section, in a centered window: wide enough for two
+   columns, fields keep their drawer markup so the labels are unchanged. */
+.modal-settings {
+  max-width: 780px;
+}
+
+.settings-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
+}
+
+.settings-column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-field-wide {
+  align-items: flex-start;
+}
+
+.settings-scale-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px 20px;
+}
+
+.modal-settings .fettec-settings-note {
+  font-size: 12px;
+}
+
+.modal-settings .fettec-cli-input {
+  width: 100%;
+  max-width: 420px;
+  font-size: 12px;
+}
+
 .connect-ports {
   display: flex;
   flex-direction: column;

@@ -4,6 +4,7 @@
 
 import { expect, test, type Page } from "@playwright/test";
 import { installFakeSerial } from "./support/fake-serial";
+import { openControls } from "./support/ui";
 
 async function fettecFrames(page: Page): Promise<{ values: number[]; slot: number }[]> {
   return page.evaluate(() => window.__fakeSerial?.fettecFrames(400) ?? []);
@@ -28,16 +29,12 @@ async function setMotorPercent(page: Page, motor: number, percent: number): Prom
   await input.press("Enter");
 }
 
-async function openSettings(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
-}
-
 test("FETtec passthrough: scan, signal check, per-motor ramp and DTR reboot", async ({ page }) => {
   test.setTimeout(120_000);
   await page.addInitScript(installFakeSerial, { simulateLoss: false });
   await page.goto("/");
   await page.getByRole("button", { name: "Explore demo" }).click();
-  await openSettings(page);
+  await openControls(page);
 
   // Capture an MSP_ANALOG snapshot first: it is the cross-check source for the
   // ESC voltage/current scale factors.
