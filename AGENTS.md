@@ -4,26 +4,6 @@ Contributor/agent guide. Read [PLAN.md](./PLAN.md) for the full architecture; th
 the hard parity rules, the deltas where the port was re-baselined to the **current** desktop app,
 and the environment gotchas learned the hard way.
 
-## The oracle rule
-
-`../vibro` (Python/PyQt6 desktop app) is the ground-truth oracle. **Never modify it.** When in
-doubt about behavior, read:
-
-| Question about | Source file |
-| --- | --- |
-| Orchestration, RMS, peaks, naming, snapshots, ESC ramp, handshake timing | `vibro/app.py` |
-| Constants (FS, MAX_FFT_POINTS=512, DVB1, sensitivity, SEQ_LINE regex) | `vibro/config.py` |
-| FFT math (`compute_fft`, tail-512 cap, Hann, scale) | `vibro/fft_worker.py` |
-| Serial protocol, `call all`/`start stream`, sensitivity commands, reconnect | `vibro/serial_io.py` |
-| DVB1 parse/write, gravity removal | `vibro/utils.py` |
-| MSP telemetry record rules | `vibro/esc_telemetry.py` |
-
-`com_log.py`, `seq_analyzer.py`, `test.py`, `fettec_ctl.py` in the desktop repo are standalone
-dev CLI tools — out of app scope. For **FETtec OneWire** the oracle is *not* the desktop:
-read the FETtec configurator (`gui.fettec.net/js/ESC/onewire.js`, `js/ESC/protocol/bf_pt.js`,
-`js/common/OW_commands.js`, `ESC/main.js`) and ArduPilot `libraries/AP_FETtecOneWire`.
-`vibro/fettec_ctl.py` is a defective prototype — see [FETtec gotchas](#fettec-gotchas).
-
 ## Layout
 
 ```
