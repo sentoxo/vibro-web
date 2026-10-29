@@ -22,6 +22,9 @@ tests/dom/       vitest jsdom project (settings persistence)
 tests/e2e/       Playwright specs (+ support/fake-serial.ts mock, support/ui.ts panel openers)
 tests/fixtures/  test_data.bin (6×6400@3200 DVB1 container), golden.json, py_dvb1_*.bin
 scripts/         gen_golden.py (fixture regeneration), validate_export.py (byte-parity gate)
+VERSION          app version, the single source of __APP_VERSION__ (status strip, About,
+                 PNG export, debug log); package.json mirrors it — tests/unit/version.test.ts
+                 fails on drift. Bump both when releasing.
 ```
 
 ## Parity contract (verified by tests)

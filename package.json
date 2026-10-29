@@ -1,7 +1,7 @@
 {
   "name": "vibro-web",
   "private": true,
-  "version": "0.1.1-dev",
+  "version": "0.1.2-dev",
   "type": "module",
   "description": "Real-time vibration monitor — web port of the Vibro desktop app",
   "scripts": {

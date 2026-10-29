@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { defineConfig } from "vitest/config";
 import preact from "@preact/preset-vite";
 import { VitePWA } from "vite-plugin-pwa";
@@ -5,7 +6,30 @@ import { VitePWA } from "vite-plugin-pwa";
 // GitHub Pages project sites live under /<repo>/. Set VITE_BASE=/<repo>/ at
 // build time; local development and root deployments use "/".
 const base = process.env.VITE_BASE ?? "/";
-const version = process.env.npm_package_version ?? "0.1.1-dev";
+
+/**
+ * The repo-root `VERSION` file is the single source of `__APP_VERSION__` (the
+ * status strip, About dialog, PNG export and debug-log header). Reading the
+ * file instead of `npm_package_version` keeps a bare `vite build` honest:
+ * without npm it used to fall back to a hardcoded string that silently went
+ * stale. `package.json` mirrors the version for npm metadata;
+ * tests/unit/version.test.ts fails when the two drift.
+ */
+function appVersion(): string {
+  const read = (rel: string) => {
+    try {
+      return readFileSync(new URL(rel, import.meta.url), "utf8");
+    } catch {
+      return "";
+    }
+  };
+  const fromFile = read("./VERSION").trim();
+  if (fromFile) return fromFile;
+  const pkg = JSON.parse(read("./package.json") || "{}") as { version?: string };
+  return pkg.version ?? "0.0.0";
+}
+
+const version = appVersion();
 const buildHash = process.env.VITE_BUILD_HASH ?? "dev";
 
 export default defineConfig({
