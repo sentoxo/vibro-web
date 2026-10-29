@@ -15,7 +15,7 @@ export interface Sample {
 
 export interface Settings {
   imuHz: number; // 800 | 1000 | 1600 | 2000 | 3200 | 4000 (time charts + snapshot)
-  fftMaxHz: number; // live FFT Nyquist; live FFT runs at 2 × fftMaxHz (desktop rule)
+  fftMaxHz: number; // FFT chart display band (zoom); never a sample rate
   fftRefreshHz: number; // 0.5 .. 60, applied floor 1.0
   lsbPerG: number; // 256 | 2048
   windowSeconds: number; // 2.0 | 0.2

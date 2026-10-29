@@ -57,8 +57,9 @@ export const FFT_Y_MAX = 2.0;
 export const FFT_Y_SCALE_STEPS = [1, 2, 3, 4, 5, 6, 8, 10];
 
 // === IMU rates ===
-// imuHz drives the time-domain charts and the snapshot rate; the live FFT
-// runs at its own rate: live_sample_rate = 2 * fftMaxHz (desktop parity).
+// imuHz is the real acquisition rate: it drives the time-domain charts, the
+// snapshot rate and the live FFT frequency axis. `fftMaxHz` is only the FFT
+// chart's display band (a zoom), not a sample rate.
 export const IMU_HZ_CHOICES = [800, 1000, 1600, 2000, 3200, 4000];
 export const DEFAULT_IMU_HZ = 2000;
 

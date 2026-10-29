@@ -66,9 +66,10 @@ const REFRESH_MAX = 60;
 const REFRESH_FLOOR = 1.0;
 
 /**
- * FFT max frequency is the live FFT Nyquist (live_sample_rate = 2×fftMaxHz),
- * independent of imuHz — matching the desktop selector, so every choice in
- * FFT_MAX_FREQ_CHOICES is always available.
+ * FFT max frequency is the FFT chart's display band (a zoom), independent of
+ * imuHz — every choice in FFT_MAX_FREQ_CHOICES stays available. The spectrum
+ * itself always runs at the real acquisition rate (imuHz), so changing this
+ * setting must never move a peak.
  */
 export function fftMaxChoicesFor(_imuHz: number): number[] {
   return [...FFT_MAX_FREQ_CHOICES];
@@ -142,7 +143,8 @@ export function validateSettings(raw: unknown): Settings {
     fettecScaleErpm: scaleIn(source.fettecScaleErpm, DEFAULT_TLM_SCALES.erpm),
     fettecScaleConsumption: scaleIn(source.fettecScaleConsumption, DEFAULT_TLM_SCALES.consumption),
   };
-  // fftMaxHz is independent of imuHz (desktop parity): accept any listed choice.
+  // fftMaxHz is independent of imuHz: accept any listed choice; the chart
+  // clamps the visible band to the real Nyquist (imuHz / 2).
   settings.fftMaxHz = numberIn(source.fftMaxHz, FFT_MAX_FREQ_CHOICES, DEFAULT_FFT_MAX_FREQ);
   return settings;
 }

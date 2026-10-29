@@ -156,8 +156,8 @@ function dftBinsBluestein(
  * Amplitude spectrum in m/s², desktop `compute_fft` parity.
  *
  * @param samples signal samples (m/s²); live mode uses the last `maxLen`
- * @param sampleRate data rate for the frequency axis: live mode uses the
- *   desktop `live_sample_rate` = 2 × fftMaxHz; file mode uses the burst rate
+ * @param sampleRate real acquisition rate for the frequency axis (imuHz live,
+ *   burst rate for files). Never the display band: `fftMaxHz` only zooms.
  * @param full keep the whole signal (file mode); otherwise cap at `maxLen`
  */
 export function computeSpectrum(samples: ArrayLike<number>, sampleRate: number, full = false, maxLen = 512): Spectrum {

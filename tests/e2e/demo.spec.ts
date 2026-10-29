@@ -40,6 +40,30 @@ test.describe("landing and demo", () => {
     });
   });
 
+  test("FFT max only zooms the spectrum; it never moves the peaks", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Explore demo" }).click();
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+
+    // Demo axis 0 carries a 48 Hz tone. The FFT runs at the real IMU rate, so
+    // the reported peak must stay at ~48 Hz for every "FFT max" setting. The
+    // old bug labelled the axis with 2 × fftMaxHz, which scaled the peak.
+    const peakNear48 = async () => {
+      const hz = await page.evaluate(() => {
+        const peaks = (window as any).__store.peaks.value[0];
+        return peaks.length > 0 ? peaks[0].frequency : null;
+      });
+      return hz !== null && Math.abs(hz - 48) < 6;
+    };
+    await expect.poll(peakNear48, { timeout: 10_000 }).toBe(true);
+
+    const fftMax = page.getByLabel("FFT max");
+    for (const hz of ["200", "400", "600", "800", "1000", "1600"]) {
+      await fftMax.selectOption(hz);
+      await expect.poll(peakNear48, { timeout: 10_000 }).toBe(true);
+    }
+  });
+
   test("about dialog opens and closes", async ({ page }) => {
     await page.goto("/");
     await page.getByLabel("About Vibro").click();

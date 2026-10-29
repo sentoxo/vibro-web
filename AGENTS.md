@@ -55,8 +55,10 @@ scripts/         gen_golden.py (fixture regeneration), validate_export.py (byte-
   reversed). No min-amplitude, no bin separation.
 - **Hero RMS**: per-axis `sqrt(mean(x²))` after gravity removal, combined as the **vector
   resultant** `sqrt(rx²+ry²+rz²)`; 10 s rolling avg/min/max.
-- **Live FFT axis**: runs at `live_sample_rate = 2 × fftMaxHz` on the last 512 samples;
-  `fftMaxHz` is independent of `imuHz` (all choices always valid, no Nyquist clamp).
+- **Live FFT axis**: runs at the real acquisition rate `imuHz` on the last 512 samples.
+  `fftMaxHz` is only the chart's display band (a zoom) and must never move a peak; the
+  visible band is clamped to the real Nyquist (`imuHz / 2`). (The old
+  `live_sample_rate = 2 × fftMaxHz` label rescaled every peak when the setting changed.)
 - **Time charts**: x-axis 0..windowSeconds (2 s / 0.2 s zoom).
 - **DVB1**: container of concatenated bursts; per-burst header = `"DVB1"` + `struct "<HHIIQQ"`
   (32 bytes: magic, version, axes, rate, count, timestamp_ns, sequence), then `count*axes` LE
@@ -99,7 +101,8 @@ scripts/         gen_golden.py (fixture regeneration), validate_export.py (byte-
 
 ## Superseded PLAN.md decisions (port re-baselined to the current desktop app)
 
-- D8 → live FFT is 512 samples at `2×fftMaxHz`, not the imuHz axis.
+- D8 → live FFT is 512 samples at the real `imuHz`; `fftMaxHz` only zooms the chart
+  (the old `2×fftMaxHz` axis label was a bug that scaled every peak).
 - D9 → peaks are top-3 raw bins (no min amplitude / separation).
 - D10 → time x-axis is `0..windowSeconds`, not `-win..0`.
 - D14 → handshake is `call all` → 3 s → `start stream` (no heartbeat; the current desktop has none).

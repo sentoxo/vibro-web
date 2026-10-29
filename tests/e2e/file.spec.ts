@@ -2,8 +2,9 @@
 // snapshot (validated against the Python parser by scripts/validate_export.py).
 
 import { expect, test } from "@playwright/test";
+import { fileURLToPath } from "node:url";
 
-const FIXTURE = new URL("../fixtures/test_data.bin", import.meta.url).pathname;
+const FIXTURE = fileURLToPath(new URL("../fixtures/test_data.bin", import.meta.url));
 
 test.describe("file mode", () => {
   test("loads all six bursts and exports a valid DVB1 snapshot", async ({ page }) => {
@@ -32,7 +33,7 @@ test.describe("file mode", () => {
     const file = await download;
     const suggested = file.suggestedFilename();
     expect(suggested).toMatch(/\.bin$/);
-    await file.saveAs(new URL("../.artifacts/exported.bin", import.meta.url).pathname);
+    await file.saveAs(fileURLToPath(new URL("../.artifacts/exported.bin", import.meta.url)));
   });
 
   test("rejects non-DVB1 files with a toast", async ({ page }) => {

@@ -221,10 +221,10 @@ export async function composeDashboardPng(): Promise<Blob> {
       color,
     });
 
-    // FFT panel.
+    // FFT panel. `fftMaxHz` only zooms; never draw past the real Nyquist.
     const { freqs, amps } = store.getSpectrum(axis);
-    const liveMaxHz = settings.fftMaxHz;
-    const displayMaxHz = timeFrame?.mode === "file" ? Math.min(settings.fftMaxHz, timeFrame.imuHz / 2) : liveMaxHz;
+    const nyquistHz = timeFrame ? timeFrame.imuHz / 2 : settings.fftMaxHz;
+    const displayMaxHz = Math.min(settings.fftMaxHz, nyquistHz);
     let peakAmp = 0;
     for (let i = 0; i < amps.length; i++) peakAmp = Math.max(peakAmp, amps[i]);
     drawPanel(ctx, theme, MARGIN + panelW + GAP, y, panelW, panelH, {

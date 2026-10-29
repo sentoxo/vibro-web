@@ -166,8 +166,9 @@ class Store {
   readonly lostPacketWarning = signal(false);
   readonly serialSupported = serialSupported();
   readonly isDemo = computed(() => this.sourceKind.peek() === "demo");
-  // Live FFT runs at the desktop `live_sample_rate`: Nyquist = fftMaxHz.
-  readonly liveFftSampleRate = computed(() => 2 * this.settings.peek().fftMaxHz);
+  // Live FFT analyses samples acquired at the IMU rate. `fftMaxHz` is only the
+  // display band (the chart x-range), never the FFT sample rate.
+  readonly liveFftSampleRate = computed(() => this.settings.peek().imuHz);
 
   // === Non-reactive data plane ===
   private rings: RingBuffer[] = [];
@@ -512,16 +513,17 @@ class Store {
     this.latestTimeFrame = frame;
     for (const listener of this.frameListeners) listener(frame);
 
-    // FFT scheduling at the configured refresh rate. The frequency axis uses
-    // the desktop `live_sample_rate` = 2 × fftMaxHz (not imuHz), so the
-    // spectrum always spans 0..fftMaxHz; the worker caps live FFTs at the
-    // last 512 samples of the window (MAX_FFT_POINTS).
+    // FFT scheduling at the configured refresh rate. The frequency axis must
+    // use the rate the samples were actually acquired at (imuHz); `fftMaxHz`
+    // only zooms the chart. Labelling the axis with 2 × fftMaxHz rescaled
+    // every peak whenever the setting changed. The worker caps live FFTs at
+    // the last 512 samples of the window (MAX_FFT_POINTS).
     const fftInterval = 1000 / Math.max(0.5, settings.fftRefreshHz);
     if (now - this.lastFftAt >= fftInterval) {
       this.lastFftAt = now;
       const fftN = Math.min(n, MAX_FFT_POINTS);
       if (fftN >= MIN_FFT_SAMPLES) {
-        const liveFftRate = 2 * settings.fftMaxHz;
+        const liveFftRate = settings.imuHz;
         for (let axis = 0; axis < 3; axis++) {
           const out = this.fftScratch[axis];
           const src = this.scratch[axis];
@@ -654,8 +656,10 @@ class Store {
   private emitFftFrame(axis: 0 | 1 | 2, mode: "live" | "file"): void {
     const settings = this.settings.peek();
     const { freqs, amps } = this.spectra[axis];
-    // Desktop FFT x-range is 4 Hz .. fftMaxHz in every mode; the spectrum
-    // itself ends at the live Nyquist (2·fftMaxHz) or the burst Nyquist.
+    // The chart never shows more than the spectrum's real Nyquist
+    // (imuHz / 2 live, burst rate / 2 for files): above it there are no bins,
+    // and stretching the axis there was what mislabelled every peak.
+    const nyquist = freqs.length > 0 ? freqs[freqs.length - 1] : settings.fftMaxHz;
     const frame: FftFrame = {
       axis,
       freqs,
@@ -663,7 +667,7 @@ class Store {
       peaks: this.peaks.peek()[axis],
       yMax: this.fftYMaxes[axis],
       minHz: 4,
-      maxHz: settings.fftMaxHz,
+      maxHz: Math.min(settings.fftMaxHz, nyquist),
       mode,
     };
     for (const listener of this.fftListeners) listener(frame);
